@@ -1,0 +1,6 @@
+{
+  "name": "Agentic Employee Records",
+  "description": "Make every employee file complete, explainable, and defensible — continuously. AI compliance, evidence verification, and remediation layer for enterprise HCMs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
