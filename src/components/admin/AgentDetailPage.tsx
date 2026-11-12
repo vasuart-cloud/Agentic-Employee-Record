@@ -474,7 +474,7 @@ export const AgentDetailPage: React.FC = () => {
           </div>
 
           <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            {versions.map((ver) => (
+            {versions.map((ver: any) => (
               <div key={ver.version} className="p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2.5">

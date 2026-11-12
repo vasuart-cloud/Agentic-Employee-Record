@@ -210,7 +210,7 @@ export const ObservabilityView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {PRODUCTION_EXCEPTIONS.map((exc, idx) => (
+          {PRODUCTION_EXCEPTIONS.map((exc: any, idx: number) => (
             <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
               <span className="text-[10px] text-slate-500 block uppercase font-mono truncate" title={exc.type}>
                 {exc.type}

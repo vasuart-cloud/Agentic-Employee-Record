@@ -1,171 +1,357 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useApp } from '../../context/AppContext';
 import { 
   DollarSign, 
-  TrendingUp, 
   Clock, 
+  TrendingUp, 
   ShieldCheck, 
-  Users, 
-  FileCheck, 
-  ArrowUpRight, 
-  ArrowDownRight,
+  Sliders, 
+  CheckCircle2, 
+  ArrowRight, 
+  FileDown, 
+  Info,
   Sparkles,
-  PieChart
+  Target
 } from 'lucide-react';
 
 export const BusinessValueView: React.FC = () => {
+  const { 
+    assumptions, 
+    updateAssumptions, 
+    computedMetrics,
+    complianceCases,
+    employees,
+    currentPersona
+  } = useApp();
+
+  const [isAssumptionsOpen, setIsAssumptionsOpen] = useState(false);
+
+  // Per-case delta
+  const minutesSavedPerCase = Math.max(0, assumptions.baselineManualMinutesPerCase - assumptions.assistedMinutesPerCase);
+  const resolvedCasesCount = complianceCases.filter(c => c.status === 'GREEN_RESOLVED').length;
+  const actualDemoMinutesSaved = resolvedCasesCount * minutesSavedPerCase;
+  const actualDemoLaborSaved = Math.round((actualDemoMinutesSaved / 60) * assumptions.loadedHrHourlyRate);
+
+  // Scaled monthly/annual pilot projection
+  const projectedMonthlyHoursSaved = Math.round((assumptions.averageMonthlyCases * minutesSavedPerCase) / 60);
+  const projectedMonthlyLaborSaved = Math.round(projectedMonthlyHoursSaved * assumptions.loadedHrHourlyRate);
+  const projectedAnnualGrossLaborValue = projectedMonthlyLaborSaved * 12;
+  const totalCost = assumptions.annualSubscriptionCost + assumptions.annualizedImplementationCost;
+  const projectedAnnualNetValue = projectedAnnualGrossLaborValue - totalCost;
+
+  // Export summary
+  const handleExportSummary = () => {
+    const summary = `AGENTIC EMPLOYEE RECORDS — ROI & BUSINESS VALUE SUMMARY
+Generated: ${new Date().toLocaleDateString()}
+Organization: BioVanguard Health Systems
+Monitored Workforce: ${computedMetrics.totalMonitored} files
+North Star Audit-Ready Rate: ${computedMetrics.northStarAuditReadyPercent}%
+
+ACTUAL DEMO RESOLUTIONS:
+Resolved Cases: ${resolvedCasesCount}
+Minutes Saved (Actual): ${actualDemoMinutesSaved} mins
+Labor Value Saved (Actual): $${actualDemoLaborSaved}
+
+PILOT PROJECTED ROI (Illustrative Assumptions):
+Baseline Manual Review: ${assumptions.baselineManualMinutesPerCase} mins/case
+Assisted Review: ${assumptions.assistedMinutesPerCase} mins/case
+Loaded Hourly Rate: $${assumptions.loadedHrHourlyRate}/hr
+Average Monthly Volume: ${assumptions.averageMonthlyCases} cases/month
+Projected Monthly Hours Saved: ${projectedMonthlyHoursSaved} hrs/mo
+Projected Annual Labor Value: $${projectedAnnualGrossLaborValue.toLocaleString()}
+Annual Software & Implementation Cost: $${totalCost.toLocaleString()}
+Projected Annual Net ROI: $${projectedAnnualNetValue.toLocaleString()}
+`;
+    const blob = new Blob([summary], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Agentic_Records_ROI_Report_${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="space-y-6 pb-12 text-slate-800">
+    <div className="space-y-6 text-left">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="text-[10px] font-mono font-bold text-teal-700 tracking-widest uppercase mb-0.5">
-            EXECUTIVE ROI & HR OPERATIONAL ECONOMICS
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 font-bold">
+              Quantifiable Business Impact
+            </span>
+            <span className="text-xs text-slate-400">· Transparent Economic Model</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Business Value Dashboard
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            Business Value & Audit Readiness ROI
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Demonstrating tangible HR service delivery cost savings, reduced audit risk, and operational velocity.
+          <p className="text-xs text-slate-600 mt-0.5">
+            Measure operational time saved, reduction in audit exposure, and scalable pilot economics based on verifiable in-app actions.
           </p>
         </div>
 
-        <div className="text-right">
-          <span className="text-[11px] text-slate-500 font-mono block">PILOT ECONOMIC MODEL</span>
-          <span className="text-xs font-bold text-teal-700">Multi-State 10,000 Worker Enterprise</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsAssumptionsOpen(!isAssumptionsOpen)}
+            className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors"
+          >
+            <Sliders className="w-3.5 h-3.5 text-teal-700" />
+            <span>{isAssumptionsOpen ? 'Hide Assumptions' : 'Edit ROI Assumptions'}</span>
+          </button>
+
+          <button
+            onClick={handleExportSummary}
+            className="px-3.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-colors"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span>Export ROI Summary</span>
+          </button>
         </div>
       </div>
 
-      {/* Top Value Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <div className="text-[10px] font-mono font-bold text-slate-500 uppercase">MONTHLY PRODUCTIVITY VALUE</div>
-          <div className="text-3xl font-extrabold text-slate-900 font-mono mt-1">$64,200</div>
-          <div className="text-xs text-emerald-600 font-semibold mt-1">1,284 HR hours saved / month</div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <div className="text-[10px] font-mono font-bold text-slate-500 uppercase">ANNUALIZED VALUE</div>
-          <div className="text-3xl font-extrabold text-teal-700 font-mono mt-1">$770,400</div>
-          <div className="text-xs text-slate-500 mt-1">Direct labor reallocation</div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <div className="text-[10px] font-mono font-bold text-slate-500 uppercase">AUDIT PREP EFFORT</div>
-          <div className="text-3xl font-extrabold text-emerald-700 font-mono mt-1">-86%</div>
-          <div className="text-xs text-slate-500 mt-1">Down from 5 days to 7 hours</div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <div className="text-[10px] font-mono font-bold text-slate-500 uppercase">COST PER RESOLVED CASE</div>
-          <div className="text-3xl font-extrabold text-slate-900 font-mono mt-1">↓ 42%</div>
-          <div className="text-xs text-emerald-600 font-semibold mt-1">2.4 touches vs 6.2 baseline</div>
-        </div>
-      </div>
-
-      {/* ROI HYPOTHESIS COMPARISON BOX */}
-      <div className="bg-white border-2 border-teal-500/40 rounded-2xl p-6 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <div className="text-[10px] font-mono font-bold text-teal-700 uppercase tracking-widest block mb-0.5">
-              ECONOMIC PROPOSITION
+      {/* Editable Assumptions Drawer / Banner */}
+      {isAssumptionsOpen && (
+        <div className="bg-white border border-teal-200 rounded-xl p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="font-bold text-xs text-slate-900 flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-teal-700" />
+              <span>Configurable Economic Assumptions (Illustrative Defaults)</span>
             </div>
-            <h2 className="text-lg font-bold text-slate-900">
-              ROI Hypothesis & Enterprise Justification
-            </h2>
+            <span className="text-[10px] text-slate-400 font-mono">Formula: max(0, baseline - assisted) * cases * hourly rate</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">Value Multiple:</span>
-            <span className="text-base font-extrabold font-mono text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1 rounded-lg">
-              3.1× Net ROI
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 block mb-1">Baseline Review</label>
+              <div className="flex items-center gap-1">
+                <input 
+                  type="number"
+                  value={assumptions.baselineManualMinutesPerCase}
+                  onChange={(e) => updateAssumptions({ baselineManualMinutesPerCase: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold"
+                />
+                <span className="text-slate-400 text-[10px]">min</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 block mb-1">Assisted Review</label>
+              <div className="flex items-center gap-1">
+                <input 
+                  type="number"
+                  value={assumptions.assistedMinutesPerCase}
+                  onChange={(e) => updateAssumptions({ assistedMinutesPerCase: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold"
+                />
+                <span className="text-slate-400 text-[10px]">min</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 block mb-1">Loaded HR Rate</label>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 text-[10px]">$</span>
+                <input 
+                  type="number"
+                  value={assumptions.loadedHrHourlyRate}
+                  onChange={(e) => updateAssumptions({ loadedHrHourlyRate: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold"
+                />
+                <span className="text-slate-400 text-[10px]">/hr</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 block mb-1">Monthly Cases</label>
+              <input 
+                type="number"
+                value={assumptions.averageMonthlyCases}
+                onChange={(e) => updateAssumptions({ averageMonthlyCases: parseInt(e.target.value) || 0 })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 block mb-1">Annual Subscription</label>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 text-[10px]">$</span>
+                <input 
+                  type="number"
+                  value={assumptions.annualSubscriptionCost}
+                  onChange={(e) => updateAssumptions({ annualSubscriptionCost: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-600 block mb-1">Implementation</label>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 text-[10px]">$</span>
+                <input 
+                  type="number"
+                  value={assumptions.annualizedImplementationCost}
+                  onChange={(e) => updateAssumptions({ annualizedImplementationCost: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Value Cards (Dual Column: In-App Demo Actuals vs Scaled Pilot Projections) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Actual Demo Impact */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Live Demo State Outcome
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-100 text-teal-800">
+              Verified Actuals
             </span>
           </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <div className="text-2xl font-black text-slate-900">
+                {actualDemoMinutesSaved} min
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Saved across {resolvedCasesCount} resolved case{resolvedCasesCount === 1 ? '' : 's'}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-2xl font-black text-emerald-700">
+                ${actualDemoLaborSaved}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Direct labor value saved
+              </div>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-100 leading-snug">
+            Calculated dynamically from {minutesSavedPerCase} minutes saved per completed case at ${assumptions.loadedHrHourlyRate}/hr.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-            <span className="font-bold text-slate-500 uppercase font-mono text-[10px] block">ANNUAL SUBSCRIPTION COST</span>
-            <div className="text-2xl font-bold font-mono text-slate-900">$250,000</div>
-            <p className="text-slate-600 text-[11px] leading-relaxed">
-              Tier for 10,000 active employees with unlimited continuous file monitoring across Workday, SharePoint, and DocuSign.
-            </p>
+        {/* Scaled Pilot Projection */}
+        <div className="bg-teal-900 text-white rounded-xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-teal-300 uppercase tracking-wider">
+              Projected Annual Net ROI (Pilot)
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-800 text-teal-200">
+              Illustrative Projection
+            </span>
           </div>
 
-          <div className="p-4 rounded-xl bg-teal-50/60 border border-teal-200 space-y-2">
-            <span className="font-bold text-teal-700 uppercase font-mono text-[10px] block">ANNUAL OPERATIONAL VALUE</span>
-            <div className="text-2xl font-bold font-mono text-teal-900">$770,400</div>
-            <p className="text-teal-800 text-[11px] leading-relaxed">
-              Direct operational savings: 15,408 annual HR Operations hours saved @ $50/hour loaded cost.
-            </p>
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <div className="text-2xl font-black text-white">
+                ${projectedAnnualNetValue.toLocaleString()}
+              </div>
+              <div className="text-xs text-teal-200 mt-0.5">
+                Annual net savings (after SaaS cost)
+              </div>
+            </div>
+
+            <div>
+              <div className="text-2xl font-black text-amber-300">
+                {projectedMonthlyHoursSaved * 12} hrs
+              </div>
+              <div className="text-xs text-teal-200 mt-0.5">
+                Annual HR operational hours saved
+              </div>
+            </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
-            <span className="font-bold text-emerald-700 uppercase font-mono text-[10px] block">NET MONETARY BENEFIT</span>
-            <div className="text-2xl font-bold font-mono text-emerald-900">+$520,400</div>
-            <p className="text-emerald-800 text-[11px] leading-relaxed">
-              Net annual surplus after software subscription. Excludes avoided statutory fines (e.g. $2,500/missing I-9).
-            </p>
-          </div>
-        </div>
-
-        <div className="text-[11px] text-slate-400 italic">
-          * Illustrative customer economics — validate during design-partner pilots with HR Operations leadership.
+          <p className="text-[11px] text-teal-200 pt-2 border-t border-teal-800 leading-snug">
+            Based on {assumptions.averageMonthlyCases} exceptions/mo, $36K annual software fee, and $12K onboarding cost.
+          </p>
         </div>
       </div>
 
-      {/* Operational Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-          <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">Audits & Governance</span>
-          <div className="space-y-2 text-xs font-mono">
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Audit-Ready Files:</span>
-              <span className="font-bold text-teal-700">91% (11,356)</span>
+      {/* HERO COMPARISON: Daniel Kim Before vs After Case Study */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-teal-700" />
+            <span>Hero Workflow Efficiency Comparison: Daniel Kim (EMP-10419)</span>
+          </div>
+          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded">
+            87% Turnaround Reduction
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          {/* Baseline Manual */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="font-bold text-slate-800 text-xs uppercase text-slate-400">
+              Legacy Manual Audit Process
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Audit Dossiers Generated:</span>
-              <span className="font-bold text-slate-900">342 packets</span>
+            <div className="space-y-1 text-slate-600">
+              <div>• <strong>45 minutes</strong> of manual cross-referencing across SharePoint & Workday</div>
+              <div>• <strong>4 back-and-forth emails</strong> with employee requesting certificate</div>
+              <div>• <strong>14 calendar days</strong> average turnaround to obtain evidence</div>
+              <div>• <strong>Zero audit ledger trail</strong> proving who verified what clause</div>
+              <div>• Discovered only during quarterly audit panic</div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">USCIS Penalty Exposure:</span>
-              <span className="font-bold text-emerald-700">Near Zero</span>
+          </div>
+
+          {/* Agentic Flow */}
+          <div className="p-4 bg-teal-50/60 border border-teal-200 rounded-xl space-y-2">
+            <div className="font-bold text-teal-800 text-xs uppercase">
+              Agentic Employee Records Flow
+            </div>
+            <div className="space-y-1 text-teal-900">
+              <div>• <strong>6 minutes</strong> of human HR review & approval (Gates 2 & 3)</div>
+              <div>• <strong>1-click outreach</strong> pre-drafted with exact policy citation</div>
+              <div>• <strong>48 hours</strong> turnaround via simulated self-service portal</div>
+              <div>• <strong>Immutable SHA-256 ledger</strong> capturing exact rule v3.8 clause</div>
+              <div>• Automated metadata writeback to Workday HCM</div>
             </div>
           </div>
         </div>
+      </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-          <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">File Completeness Velocity</span>
-          <div className="space-y-2 text-xs font-mono">
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Files Monitored:</span>
-              <span className="font-bold text-slate-900">12,480 workers</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Docs Classified:</span>
-              <span className="font-bold text-slate-900">84,390 files</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Gaps Prevented:</span>
-              <span className="font-bold text-teal-700">1,623 resolved</span>
-            </div>
-          </div>
+      {/* Pilot Hypothesis & Expansion Goals */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+        <div className="font-bold text-sm text-slate-900 flex items-center gap-2">
+          <Target className="w-4 h-4 text-teal-700" />
+          <span>Enterprise Pilot Hypotheses (Product Deck Validation)</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-          <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">Cycle Time Reduction</span>
-          <div className="space-y-2 text-xs font-mono">
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Gap Resolution:</span>
-              <span className="font-bold text-emerald-700">63% faster (3.1d)</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Manual File Review:</span>
-              <span className="font-bold text-emerald-700">5 min (vs 18 min)</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 font-sans">Adoption Rate:</span>
-              <span className="font-bold text-slate-900">92% Weekly Active</span>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="font-bold text-slate-900 mb-1">Adoption Hypothesis</div>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              HR Ops uses weekly exception queue as primary workflow without opening raw SharePoint folders.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="font-bold text-slate-900 mb-1">Trust Hypothesis</div>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              Explainable "Why Flagged?" citations reduce employee outreach approval reluctance to &lt; 5%.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="font-bold text-slate-900 mb-1">Efficiency Hypothesis</div>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              At least 35 minutes saved per credential remediation with zero compliance escapes.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="font-bold text-slate-900 mb-1">Expansion Hypothesis</div>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              Expand from initial Clinical R&D cohort to enterprise-wide 11,400 multi-state workers.
+            </p>
           </div>
         </div>
       </div>
