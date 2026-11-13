@@ -21,7 +21,8 @@ export const AgentEvalsView: React.FC = () => {
     setSelectedEvalCase, 
     setIsEvalModalOpen, 
     releaseGateApproved, 
-    setReleaseGateApproved 
+    setReleaseGateApproved,
+    notify
   } = useApp();
 
   const [isRunningAllEvals, setIsRunningAllEvals] = useState(false);
@@ -298,7 +299,7 @@ export const AgentEvalsView: React.FC = () => {
               </button>
             ) : (
               <button
-                onClick={() => alert('Agent v2.5 Draft successfully published to Production environment!')}
+                onClick={() => notify('Agent v2.5 Draft marked ready in Demo Sandbox.', 'success')}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-xs flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4" />

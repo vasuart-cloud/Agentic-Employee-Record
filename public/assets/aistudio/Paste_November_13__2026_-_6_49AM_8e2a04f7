@@ -1,0 +1,242 @@
+Healthcare Enterprise, Workday-Connected, Real-User Demo Upgrade
+COPY ALL TEXT BELOW INTO GOOGLE AI STUDIO BUILD MODE WITH THE EXISTING PROJECT LOADED.
+
+You are a principal enterprise HR product designer, senior React/TypeScript engineer, healthcare workforce credentialing domain specialist, Workday integration architect, and AI governance engineer. Upgrade my EXISTING Agentic Employee Records prototype. Do not create an unrelated application or merely write a proposal. Implement, wire, compile, and test a coherent interactive prototype suitable for supervised demonstrations and discovery sessions with actual HR Operations Leads, Healthcare Compliance Administrators, and CHROs at large US healthcare organizations.
+
+Project: https://github.com/vasuart-cloud/Agentic-Employee-Record
+Current deployed demo: https://agentic-employee-record.vercel.app/
+Stack: existing React + TypeScript + Vite + Tailwind + lucide-react. Preserve good existing UI patterns and the four bounded agents: Ingestion, Compliance, Remediation, Audit/Retrieval. Reuse existing code rather than unnecessarily replacing it.
+
+Important: “Ready for a real-user demonstration” means a safe, honest, internally consistent, working synthetic-data demo—NOT a production-ready healthcare compliance platform. Do not claim a live Workday tenant, real state-board license lookup, actual email delivery, real identity proofing, HIPAA certification, Joint Commission accreditation, audit-proof storage, SOC 2 compliance, real-world accuracy, or guaranteed ROI unless actually implemented and verifiable. In demo mode, label every simulated external interaction clearly.
+1 — Product purpose and acceptance philosophy
+Position as Workforce Credential & Compliance Readiness (Agentic Employee Records as the product name): a governed operational layer that continuously identifies gaps, routes verification to accountable teams, supports employee remediation, records evidence and authorizations, and reconciles approved status with designated enterprise systems. Workday HCM remains authoritative for worker/person/job/organization data; authoritative licensing bodies or approved verification organizations remain authoritative for professional license status; clinical privileging and operational authorization remain with appropriately authorized organizational decision-makers.
+
+The hero story must communicate: Detect -> Explain -> Escalate if clinical risk -> Request evidence -> Employee responds -> Verify through correct source -> Authorized human decision -> Re-evaluate all applicable requirements -> Close the specific issue -> Reconcile with HRMS -> Measure outcomes.
+
+NEVER automatically interpret document upload as verified clinical licensure. NEVER automatically set an employee's overall compliance score to 100 after closing a single finding. NEVER have an AI agent authorize clinical duties or autonomously suspend employment. NEVER allow a general HR user to impersonate a medical approver. NEVER infer official regulation from an uploaded company policy without human review.
+2 — Fix existing code defects first
+Inspect and update these existing modules specifically:
+- src/context/AppContext.tsx: current employee/case state, simulated document submission, reviewEvidenceAndResolve, triggerHRMSWriteback, retryFailedSync, rule evaluation, audit logging and computedMetrics. Correct their logic and unify relational state.
+- src/components/admin/ComplianceSetupWizard.tsx: policy upload UI, deterministic rule editor, test lab, approval/publishing, impacted workforce.
+- src/components/dossier/EmployeeDossier.tsx: Daniel Kim hero case, employee portal, Why Flagged, document upload, manual review, red/amber/green status, HRMS writeback.
+- src/components/dashboard/WeeklyOperationsDashboard.tsx: weekly, operational metrics, prioritization, filters, assignments, real date windows.
+- src/components/integrations/IntegrationsView.tsx: Workday mirror, mapped fields, event sync and failures.
+- src/components/admin/BusinessValueView.tsx, src/components/executive/ExecutiveOverview.tsx: denominators, measurable outcomes, ROI distinction.
+- src/components/layout/Sidebar.tsx, src/components/layout/Header.tsx, src/components/common/PersonaSwitcherModal.tsx: role-specific intuitive menus and onboarding; don't bring back the old '6-Min CEO Demo' header.
+- src/components/audit/AuditLogView.tsx and src/types/index.ts: credible audit event model, access model, status model.
+- src/data/mockData.ts: coherent synthetic healthcare cases and audit-safe seed data.
+- src/App.tsx: real route/view composition. Make all navigation items lead to the correct page; avoid multiple labels linking to the same generic page except where clearly using real tabs.
+Fix these specific issues:
+1. runRuleEvalSandbox currently returns hardcoded 10/10, 100% results. Replace with a real local deterministic rules engine applied to named fixtures. Compute confusion matrix from actual per-fixture expected/actual outcomes and expose failures, not guaranteed passes.
+2. reviewEvidenceAndResolve currently sets fileHealthScore=100, openGapsCount=0. Compute whole-file readiness from all currently applicable requirements and all open findings. Close only the verified requirement and only then re-evaluate the file. Require necessary authoritative verification records and human approval.
+3. retryFailedSync currently marks more than the selected failed run as successful and hardcodes Daniel's record. Make retries isolated and correlated by syncRunId/employeeId/caseId; permit retry only on a failed or retryable transaction; update status only on a simulated confirmed acknowledgement.
+4. logAuditEvent currently constructs a fake 'SHA256' via noncryptographic arithmetic and calls the log immutable. Remove the false claim. For browser-only mode, use a clearly labeled Demonstration Event History — not tamper-proof, event IDs/timestamps/actor/source, and simple integrity metadata only if honest. If implementing real server-side signed append-only storage, describe exactly how; do not imply it exists otherwise.
+5. Current organization says 11,420 employees while in-memory sample contains about 12. Never compute 'enterprise audit-ready %' as if the sample covered all 11,420. Label demo sample counts and enterprise population separately. Dashboard metrics and denominator must be accurately based on the actual dataset and eligible population. If modeled enterprise estimates are shown, label them Illustrative projection.
+6. React local UI role-switching is not authentication or RBAC. Implement strict state/action permissions in a shared authorization service for DEMO personas and label it simulated access controls; specify true production SSO/API enforcement as future work.
+7. Remove hardcoded elapsed-day claims for expired cases. Dates should derive from an explicit demo reference date or current date with date-safe calculations. Seed a clear reproducible expired-license state on Reset Demo.
+8. Handle selection consistently: clicking a case chooses correct employeeId, caseId, assigned owner, task, messages and source evidence; no incidental mismatches.
+9. Persist and restore ALL relevant demo state consistently; reset should restore all seeds, role, statuses, approvals, event history and sync state. Confirm refresh, role switching and back navigation do not break the experience.
+3 — Personas and accountable responsibilities
+Three featured personas, accessible via top-right persona selector:
+
+MAYA — HR OPERATIONS LEAD
+- Main job: weekly triage, assignment, employee outreach, follow-ups, deadline tracking, exception coordination, closure tracking.
+- Can review ordinary HR evidence, approve employee communications, assign owners, view case history, and request appropriate verification.
+- Cannot independently mark a regulated clinical license 'primary-source verified' or authorize clinical duties. Must route to Credentialing when applicable.
+PRIYA — HEALTHCARE COMPLIANCE ADMIN
+- Main job: policy source management, department/facility/role/location applicability, rules, test fixtures, governance, escalation SLAs, authorization and policy versioning, audit reporting.
+- Can create draft rules, run evals and submit them for approval. Cannot approve her own policy version in the demo approval simulation.
+DAVID — CHRO / VP PEOPLE
+- Main job: exposure and readiness across facilities, risk trend, aging and accountable owners, onboarding time to readiness, prevented delays, policy coverage, and business value.
+- Read-only aggregate insight and authorized drill-down; no individual employee medical documentation, no clinical details beyond permitted risk status, no operational approve/send buttons.
+For realistic case processing, add a fourth supporting limited-role approval persona accessible only within an explicitly labeled demo role menu: Alex Morgan — Credentialing / Clinical Compliance Reviewer. This is not a fourth headline buyer persona. Alex can perform a simulated primary-source verification from a controlled fixture, inspect licensure details, approve or reject clinical credential evidence, and record clinical leadership escalation. If a policy requires separate authorized clinical leadership sign-off, model that as another named approval state without implying one person automatically holds all privileges. This prevents Maya or Priya from self-approving all tasks.
+
+Show role and user identity, permitted actions, assigned workload, and role-specific sidebar. If the user changes role, maintain data state and event history. Display clear read-only/permission feedback for forbidden actions, not a generic error.
+4 — Onboarding, navigation and demo scenario selection
+- New demo landing: compact branded Choose Your Perspective (Maya, Priya, David) with one-sentence job-to-be-done and a visible Demo data only label. Include optional "View demo scenarios" (not a CEO walkthrough banner).
+- Maya first-use onboarding: department/facility scope, triage goals, queue sorting, notifications and assignments, button Start Weekly Compliance Review.
+- Priya first-use setup: organization -> policies and source clauses -> create scoped rules -> define verification methods and accountable owners -> run sandbox fixture tests -> independent approval/publish -> configure Workday/document sources -> preview impacted employee population.
+- David first-use: concise metric definitions and executive dashboard, 'risk to readiness to business value' explanation.
+- Sidebar roles:
+  Maya: Weekly Work Queue, Employees & Credentials, Cases & Escalations, Employee Requests, Tasks & Follow-ups, Evidence & Audit Packets, Operations Analytics.
+  Priya: Policy Library, Rule Builder, Test Lab, Rule Versions & Approvals, Credential Verification, AI Governance, Integrations & Data Mapping, Audit & Access.
+  David: Executive Overview, Risk by Facility, Readiness Trends, Business Value, Pilot Scorecard.
+- Header: organization, current persona, simulated environment (clearly labeled), search, notifications, reset with confirmation. Remove any stale CEO 6-minute bar. No inert buttons.
+- Responsive desktop/tablet, usable mobile employee upload page, accessibility: icons plus text, keyboard focus, consistent status, human-readable dates/time zones, clear labels and helper text.
+5 — Model real healthcare work instead of one generic document checklist
+Organization: synthetic BioVanguard Health Systems; Workday HCM; facilities: California Clinical Research Center, Texas Hospital, New York Specialty Clinic and Corporate HQ. Also departments (R&D/Clinical Operations, Nursing, Pharmacy, Laboratory, HR/Finance, Manufacturing/Support), employment types (permanent, contingent, contract) and multiple assignments.
+
+Sample roles and their illustrative internal policy requirements, all configurable and subject to verification by customer Compliance/Legal:
+- Clinical pharmacist in California: applicable professional license with primary-source verification; department training; relevant policy attestation; applicable facility and role requirements. Do not assume active license equals clinical privileging/authorization.
+- Registered nurse in Texas: applicable current nursing licensure; BLS/ACLS if that facility/position requires it (these organizational certifications are not automatically treated as statutory licensure requiring PSV); relevant annual training.
+- Laboratory technologist in New York: role/location-specific credentials, training/competency as determined by the employer's policy; review where local requirements apply.
+- Physician or privileged practitioner: role-specific work item routed to Medical Staff Office. Track a privileges-reference status, but do not simulate independently granting privileges or treat Workday as privilege source of truth.
+- HR/Finance employee: onboarding documents, signed security policies, role-specific attestations; no professional licensure requirement unless applicable.
+- Contingent/agency clinical worker: sponsoring organization, assigned facility, assignment start/end, third-party credential source, verification owner; do not assume contract workers are managed identically to employed workers.
+- Transfer / multiple assignments: changing facility, state, job, duty or worker type triggers new applicability evaluation; no blanket rule that prior verification covers all assignments.
+Each requirement must have: requirementId, name, category, applicable jurisdiction/state, facility, position/job profile, duties/assignments, worker type, effective interval, policy clause/source/version, verification standard, owner, review/renewal frequency, due-date rule, evidence-source options, risk/severity and exception rules.
+
+Allow three applicability outcomes: Required, Not applicable, Needs policy interpretation. Never quietly presume missing files are necessarily noncompliance until repositories have been checked and the rule applies.
+
+Regulated license / certificate / registration validation must track authoritative verification; CPR/BLS and policy attestations may use other approved verification methods. Avoid falsely treating all training certificates as needing licensing-board PSV.
+
+Important: Form I-9 is a distinct workflow. If included, respect employees' choice of acceptable document(s): List A OR List B plus List C; never demand a particular employee-provided List C document. Do not use the I-9 case as the primary healthcare credentialing demonstration. Avoid hardcoded jurisdictional 'grace periods' that appear to authorize work on expired licenses.
+6 — One coherent demo dataset and relational state model
+Build 12-24 synthetic employee profiles, with 15-25 realistic distinct cases and multiple evidence items per person, covering different facilities and roles. Use synthetic names/IDs and documentation; do not leak real personal information or connect to live provider data. Do not store uploaded real employee document bytes, secrets, tokens, or medical information in browser localStorage. For demo-only user-selected files, use ephemeral browser state and retain at most synthetic metadata; clean up object URLs.
+
+Model typed entities and relationships, minimum:
+- Organization, Facility, Department, Position, EmploymentAssignment, Worker
+- PolicyDocument, PolicyClause, PolicyVersion, RuleDefinition, RuleApplicability, RuleEvaluation, TestFixture, TestRun
+- CredentialRequirement, EvidenceItem, ExtractedField, CredentialVerification, VerificationMethod, VerificationSource, CredentialStatus
+- ComplianceFinding, Case, RemediationTask, AssignmentOwner, CommunicationThread, OutboundMessage, EmployeeSubmission, ReviewDecision, Escalation
+- ClinicalEligibilityReview (status set by authorized leadership; NOT derived from AI classification), PrivilegingReference (external status only)
+- Connector, FieldMapping, DataSourceRecord, HRMSMirrorRecord, SyncTransaction, SyncAttempt, ReconciliationStatus
+- AuditEvent, KPIBaseline, ROIModelAssumption, PilotMeasurement
+Use normalized IDs and deterministic selectors so that every screen reflects the same case progression. Prefer a reducer or clearly structured shared domain store with named actions. Persist the demo in localStorage ONLY if it contains synthetic data; do not market localStorage as secure healthcare storage. Make all timestamps consistent with an explicit demo reference date and update as actions happen.
+
+Separate these four independent state dimensions in the UI and types:
+1. Document/Evidence: MISSING | REQUESTED | RECEIVED | PARSING | REVIEW_REQUIRED | REJECTED | ACCEPTED
+2. Credential Verification: NOT_REQUIRED | NOT_STARTED | PENDING_SOURCE_CHECK | VERIFIED_ACTIVE | EXPIRED | RESTRICTED | UNVERIFIED | VERIFICATION_FAILED
+3. Clinical Duty Eligibility: NOT_APPLICABLE | REVIEW_REQUIRED | RESTRICTED_BY_AUTHORIZED_DECISION | AUTHORIZED_BY_DESIGNATED_LEADER (only an authorized role can record a decision, not AI)
+4. External Sync: NOT_CONFIGURED | NOT_REQUIRED | QUEUED | IN_PROGRESS | ACKNOWLEDGED | FAILED | RECONCILIATION_REQUIRED
+Also maintain case workflow state separately: detected -> triaged -> evidence requested -> employee responded -> verification pending -> authorized review -> specific finding resolved / exception unresolved / escalated. An individual green document must not automatically turn the whole worker green. Show file readiness derived from all applicable requirements; show 'coverage unknown' if evaluation incomplete. Use text labels and status chips, not color only.
+7 — HERO FLOW A: Daniel Kim, expired clinical pharmacist license (must be fully interactive)
+Start with a synthetic expired California pharmacist license for Daniel Kim, currently assigned to a California clinical research role. Make the case status red for 'Credential Verification Required / License Expired' and show an immediate clinical-risk escalation—not a generic seven-day document chase. Include source record, date and verified policy applicability, but do not invent statutory permission to continue practice.
+
+Exact actions and expected UI:
+
+A1. Maya weekly queue: row 'Daniel Kim — Clinical Pharmacist', high-priority red, owner Credentialing (clinical risk) + HR Ops (employee outreach), duration outstanding, evidence missing/expired, verification status, next action, applicable policy and facility. Click to open the case.
+
+A2. Why flagged? drawer: show matching worker assignment, exact named rule/version/effective date, inspected source and as-of timestamp, expired document, confidence specifically as extraction/classification confidence (not legal validity), possible alternative valid documents, which repositories were searched, and why an authoritative verification is still required. Link back to simulated evidence detail. Show any uncertainty or outdated source timestamps.
+
+A3. Safety escalation: visible task for Credentialing/Clinical Compliance and notification/escalation to authorized clinical leader, with acknowledgment and owner. Status 'Eligibility review required'. Do NOT independently suspend employee, revoke privileges or change Workday employment status. Show a workflow decision recorded by an authorized leader, not an AI recommendation presented as law.
+
+A4. HR employee outreach: Remediation Agent drafts polite, accurate message specifying an acceptable updated credential or official verification process. Maya edits/approves. Show communication as Simulated delivery to demo portal, plus send history, reminder window, SLA and no fabricated real email success. Offer employee reply, clarification or 'I already renewed' path.
+
+A5. Employee portal: allow actual file input for PDF/JPG/PNG/TXT with preview, filename/size/format checks and explanatory privacy copy. Also support one-click Use sample renewal document for reliable demos. If actual PDF text extraction is unavailable, do not fake it; show 'Upload received; structured extraction unavailable in this browser demo; manual review required.' Simulated sample doc may supply seeded structured fields explicitly labeled. Employee can submit and see tracking ID. Neither upload nor extraction sets VERIFIED_ACTIVE.
+
+A6. Credentialing verification: Switch to supporting reviewer Alex. A task appears. Click Verify with Primary Source (Simulated). Show the source type 'California licensing board / authorized verification source (demo fixture)', sample license number, employee match, returned status, restrictions, expiration, checked timestamp, verifier identity, method, verification receipt/source reference. Distinguish Document received, PSV verified, and Authority to perform assigned duties. The positive fixture produces VERIFIED_ACTIVE; another demo option produces RESTRICTED or SOURCE_UNAVAILABLE and BLOCKS closure. Record verification as a simulated source result. Do not pretend to call a live licensing board.
+
+A7. Authorized approval: Credentialing reviewer confirms whether licensed status meets the specific requirement, confirms evidence, and signs off. If clinical duty eligibility must be determined, allow only separately authorized clinical leadership to record it; otherwise show Clinical eligibility review pending and do not label the worker cleared for duty. Maya cannot impersonate Alex or auto-resolve. Return to Maya for final administrative closure of that specific case after the required approval.
+
+A8. Re-evaluate all requirements: after resolving license finding, recalculate Daniel's other obligations. Seed at least one additional training or attestation gap so the license issue turns green while overall worker file remains amber or red, if that other issue is outstanding. Make this distinction visible and understandable. Provide a separate 'fully ready' scenario after the second requirement is resolved; never use one action that forces 100% completeness.
+
+A9. Sync approved metadata: if configured, queue approved status metadata for the Workday demo adapter, with payload preview, field mappings, restricted fields, idempotency key, sync transaction ID, ACK/failed, retry only selected transaction and a before/after Workday mirror view. Do not overwrite license truth from the board, clinical privileges, job status, payroll, worker type, or other master fields.
+
+A10. Show audit/evidence packet: employee, requirements, case transitions, document and source references, PSV proof metadata, who approved what, escalations, communication, sync acknowledgements. Download a DEMO labeled audit report that explicitly states simulated evidence where applicable.
+
+Keep this walkthrough achievable in 6-8 minutes of clicks; advanced detail accessible on demand.
+8 — FLOW B: New hire clinician / onboarding readiness
+Use a second synthetic worker: newly hired Texas RN joining a particular facility next week. Workday New Hire event -> import worker + assignment -> select applicable rules -> discover missing license verification, mandatory training and policy acknowledgement -> preboarding work queue -> HR and Credentialing assign actions -> employee uploads relevant documents -> proper source verification and training confirmation -> authorized clinical readiness review -> HRIS status reconciliation -> onboarding readiness dashboard updates.
+
+Show distinct Administrative onboarding progress vs Clinical duty readiness. An approaching start date adds urgency but should not automatically imply unauthorized practice or trigger an employment action. Permit status Pending and escalation with named owner. Include days-to-start and days-blocked, but calculate from dates; don't hardcode durations.
+9 — FLOW C: Negative paths and real-world exceptions
+Add working demo scenario options with one-click reset of only the scenario, without damaging other demo cases:
+- License number mismatch with employee -> reviewer rejects / requests correction.
+- Submitted document says valid but official source reports suspended/restricted -> DO NOT clear; immediate credentialing escalation.
+- Source is unavailable -> unverifiable/pending; don't treat as verified, schedule manual verification and retry.
+- Outdated or superseded policy rule -> flag for re-evaluation; allow approved version rollback and display impacted workers.
+- Employee transferred to a different state/facility -> refresh applicable requirements and ownership.
+- Two concurrent assignments -> evaluate each separately.
+- Workday sync fails or times out -> case remains verified locally but external sync is FAILED; scoped retry; no false green 'synced' badge.
+- Employee says they already submitted in Workday -> cross-source search/reconcile before duplicate request.
+- Incorrect AI classification / low-confidence extraction -> route to manual review and record false positive, override reason and evaluation sample.
+At least the restricted license, rejected evidence and sync retry paths must work in a live presentation.
+10 — Compliance Admin configuration and tests
+Priya's wizard needs meaningful, connected steps:
+1. Company/facility/state/department/position/job assignments and worker types; show which population is sample and what is outside scope.
+2. Policy library with version, owner, effective date, source, applicable business unit and reference. Provide actual file chooser for supported formats. Allow TXT extraction in browser and optional supported PDF parsing if the dependency is really implemented. Otherwise show explicitly that uploaded PDFs are retained as a demo file reference awaiting structured extraction; allow manual clause entry. No fabricated 'AI analyzed PDF' badge.
+3. Draft rule with condition expression, source clause/version, validity, applicable role/facility/state, internal renewal reminders, owner, verification standard, source, severity, exceptions, and approval requirement.
+4. Employee impact preview with accurate matching and no hardcoded Daniel flag independent of the draft rule.
+5. Executable rule test lab: 10+ named fixtures with pass, fail and edge cases; derive rule output from current draft; compute TP/TN/FP/FN, accuracy, precision, recall, coverage, blocked outcomes. Seed at least one intentionally failing fixture and demonstrate fixing a rule changes the result. Zero-denominator metrics show 'N/A' rather than 100%. Include low-confidence, outdated rule, and missing source cases. Allow a rule to fail a release gate.
+6. Independent approval: Priya requests publication; Alex or an explicitly separate authorized Policy Approver logs into demo persona, reviews diff, fixture results and applicability changes, approves/denies with reason and timestamp. Authors cannot self-approve. A publish gate refuses release if tests have not run for the current exact rule version, critical tests fail, or independent approval is missing. The UI must explicitly identify approval as demo workflow; production requires real SSO and server permissions.
+7. Connect Workday and evidence repositories via simulated connection configuration (view details below); import sample workforce and perform a scoped preview scan.
+Use seeded policy examples consistent with healthcare domains but mark them illustrative employer policies—must be reviewed by customer's legal/compliance/credentialing owners. Do not present the product as an official regulatory library.
+11 — Workday HRMS integration: credible simulation, not false claims
+Provide an interactive Workday integration architecture page and demo adapter:
+- Workday worker master: inbound worker ID, status, legal entity, facility, job profile, organization, supervisor, effective-dated assignment, transfer events and start/end dates.
+- Evidence sources: SharePoint/Box/DocuSign and credentialing/LMS external status (fictional adapters).
+- Approved compliance summary: outbound ONLY to a configured, authorized target object/field mapping or separate integration staging area. Do NOT assume any out-of-the-box Workday Worker field named complianceStatus exists or is writable.
+- Connector setup: permissions/least privilege, sandbox vs production, read-only vs writeback enablement, mapping preview, status, incremental import vs full import, recent runs, transaction IDs, retry/backoff, dead-letter and reconciliation queue.
+- Secure mapping: stable Workday worker IDs rather than name matching alone; effective-dated assignments and duplicate identity handling.
+- Render a clearly labeled simulated Before / After Workday Integration Mirror.
+- Require case-specific approved verification record and writeback permissions before enabling outbound action. Never send unreviewed health/medical detail or underlying restricted documents into general HRMS attributes.
+- Error demo: simulate HTTP 504 timeout, show Outcome unknown / requires reconciliation until a confirmed retry or lookup, prevent duplicate updates through stable idempotency keys, retry only selected record, show sync-event provenance.
+- Incoming worker transfer / new hire events must trigger rule applicability re-evaluation. Don't allow a sync action to silently overwrite an authorized clinical decision.
+- Workday Orchestrate/Extend/APIs are possible integration implementation choices depending on customer tenant, actual object model, integration security and licensed tooling—not proof this demo is connected. Build an HRMSAdapter interface and MockWorkdayAdapter clearly labeled DEMO. No live secrets, fake real endpoints, or real network writes.
+12 — Operations queue and employee communications for Maya
+Start screen: 'Weekly Workforce Readiness'. Query by a real selected week (start/end), facility, assigned owner, department, role, state, case type, severity, due date, age, employee response, source verification and clinical escalation status. Group by: Immediate clinical risk, Expired / urgent, Expiring 30/60/90 days, Employee response pending, Needs manual verification, Sync failures.
+
+Display: open this week, newly detected this week, carried over, completed this week, overdue, awaiting employee, pending PSV, cases with clinical review needed, median handling time, aged cases, unresolved owner, closure rate, queue trend. Avoid equating case counts with unique employees. Distinguish 'active cases' vs 'affected workers' vs 'required credentials' vs 'sample dataset'. Every KPI drills into the right filtered list.
+
+Click row -> case workspace with employee summary, current assignments and facility, sources checked, exact finding, related cases, why flagged drawer, evidence and source references, task owners, communications timeline, escalation, review/approval state, audit history and sync. Provide editable outreach template with due-date, secure portal link, delivery status (simulated), reminders and escalation. Make the simulated employee portal an actual separate preview view, not just a hardcoded button that instantly uploads. Support both 'employee replies asking a question' and 'employee submits sample file'.
+
+Do not show sensitive medical detail to generic HR users. Provide separate restricted occupational-health clearance summary status only; no diagnoses, vaccination records or accommodation details in general dossiers.
+13 — Executive CHRO dashboard that would justify budget
+David sees one page with:
+- Organization/facility sample population coverage and explicit denominator (not raw 'green' percent presented as audit-certified).
+- Critical licensed-credential exceptions, clinically relevant escalations, time to verification, aged unowned cases, transfers/new hires at risk, readiness trend, policy coverage and evidence verification coverage.
+- Operational capacity: case count, resolution cycle time, HR touches per case, reminder rate, rework, accepted findings and override rate, root causes and ownership by facility.
+- Executive drilldown to named responsible teams and trend, but restricted employee medical content remains hidden.
+- Time-to-readiness for new hire and transfer cohorts; projected scheduling disruption should be qualitative unless supported by explicit measurement.
+- Confidence in measurements: datasets, as-of time, sample-vs-enterprise, in-scope requirements, excluded unknowns; show explicit Not measured when metrics are unsupported.
+- Business value calculator with editable case volume, baseline manual minutes, assisted minutes, wage, software/implementation and ongoing integration costs, conversion of released capacity vs cash savings, sensitivity ranges. Formula: labor capacity value = verified case volume * max(0, baseline minutes - assisted minutes) / 60 * loaded hourly rate. Financial net benefit requires truly attributable costs and realizable savings; don't equate capacity released with cash realized. Avoid invented 'penalties prevented'.
+- One-click 'Show What Changed After Daniel Case' with pre/post KPIs calculated from source state, and a second example of new hire readiness.
+- Pilot Scorecard: metrics defined, actual measured vs demo vs projected, accuracy and false negative rates, employee response times, PSV completion rate, HR review burden, adoption, cost and willingness-to-pay. No hardcoded 87% reduction or 100% quality claim as observed outcome.
+14 — Governance, privacy, audit evidence and AI behavior
+- Bounded AI assistance: ingestion/classification, candidate issue detection, draft explanation, remediation messaging, retrieval/audit assistance. Deterministic rules own applicability, expiration comparisons, policy version checks and workflow state transitions. AI confidence is classification/extraction confidence, NOT legal or clinical fitness.
+- No external communication without authorized HR approval. No regulated credential verification solely via LLM. No autonomous assignment eligibility or clinical privileges decisions. No override of security controls by policy text or employee uploads.
+- All review decisions record actor, role, timestamp, decision, notes, method and source. Author/approver separation for high-risk policy releases.
+- Treat uploaded files and policy text as untrusted inputs; show document validation, safe file types, size limits and data-handling notices. No real PII or PHI required; synthetic data only. No hidden third-party calls with uploaded docs.
+- Clinical/occupational medical records: show restricted access boundaries, separate data category and status-only view for non-authorized users. Avoid exposing health details to Maya, David or exported reports.
+- Demo event history: stable event IDs and timestamps with before/after and scenario flags. Clearly labeled not tamperproof; no false SHA-256 hash. For real enterprise: server-side append-only audit and verifiable cryptographic evidence is future design requirement.
+- Workday sync and board verification history must be auditable and independently stateful; include manual fallbacks and 'unknown' outcomes.
+- Support explicit reasoned overrides, independent review for high-risk outcomes, rule rollback, trace inspection and kill switch controls with clear scope. If advanced agent screens already exist, keep them accessible as Admin Tools but do not overwhelm default operations journey.
+15 — UX polish for real discovery meetings
+Product visual direction: credible healthcare enterprise application, not a hackathon dashboard. Spacious but dense enough for 10K+ workers; legible typography (12-14px minimum for substantive content), crisp tables and side panels, consistent semantics, minimal animation. Avoid big red/green as the only indicator. Design tested 1366x768 desktop, 1440 desktop, tablet, and employee mobile portal. Use clear page titles, primary action per screen, breadcrumbs, sticky filter bar, clear empty/error/loading states, meaningful action confirmations, accessible dialog focus and escapes, action toasts, and links opening the exact record.
+
+Include a Demo Scenario Launcher in a subtle header menu, not an intrusive CEO banner:
+- Scenario 1: Expired pharmacist license (start at Maya red case)
+- Scenario 2: New hire nurse not ready (start at preboarding)
+- Scenario 3: Verify suspended license (negative case)
+- Scenario 4: Workday writeback failure/retry
+- Scenario 5: Compliance policy test and publish (start at Priya)
+- Scenario 6: Executive impact (start at David)
+  Each has a reset/replay; summarize scenario's demo nature. Expose helpful Demo Guide? icon for first-time users, with a short contextual description, not a scripted presentation bar.
+16 — Demo acceptance tests: implementation is not done until these work
+Run manual click-through and any automated tests possible for these exact scenarios:
+
+T1. Maya starts with Daniel RED; click Why; see document, policy, source, applicability, evidence confidence, unresolved PSV; no false 'verified' badge.
+T2. Maya sends approved simulated message; actual message history updates; status becomes awaiting employee; notification listed and auditable.
+T3. Daniel portal accepts sample credential upload; UI shows received and verification pending, not auto-green.
+T4. Alex checks simulated official-source result; active return records verifier+timestamp+source and permits policy-specific approval; restricted/source-unavailable blocks close and escalates.
+T5. After license requirement resolves, Daniel overall readiness remains incomplete while any seeded other requirement is open; closing every applicable requirement updates overall readiness correctly.
+T6. Priya edits a rule; at least one fixture result changes, confusion matrix recalculates, release gate blocks on regression failure; fixes -> rerun -> approval requested -> distinct authorized approver -> publish version with audit event.
+T7. Source unavailable / wrong document / board status restricted cannot falsely mark VERIFIED_ACTIVE.
+T8. Simulate Workday writeback fail, keep case resolved locally but sync FAILED/unknown; retry only that one transaction; mirror changes only on acknowledged success; no other employee's record changes.
+T9. Workday new-hire or role-transfer event updates assignments and re-evaluates applicable rules; alerts are scoped, not globally applied.
+T10. David dashboard reflects changed sample data and clearly separates demo sample metrics from enterprise context and modeled value. No unsupported 'organization audit-certified' message.
+T11. Refresh page, switch Maya/Priya/David, back navigation and reset; state remains consistent; forbidden action is blocked under simulated persona authorization.
+T12. Occupational/medical restricted details not shown in Maya/CHRO pages or ordinary audit exports.
+T13. Every sidebar link opens correct page; clickable buttons work; no console runtime errors or horizontal overflow; mobile employee portal usable.
+T14. Simulated onboarding steps and uploads work as explicitly described; unsupported capabilities say so visibly, not silently.
+T15. npm run lint and npm run build succeed, or identify exactly why not and fix what is possible. Add unit tests for rule applicability, file readiness recomputation, authorization, role transfer, and scoped sync retry; run available tests.
+17 — Deliverables and implementation order
+Implement in this order: (A) relational data model + state transition invariants; (B) correct status/readiness & compliance/verification logic; (C) Maya end-to-end hero journey, employee portal and distinct credentialing reviewer; (D) Priya executable rule test/independent approval; (E) Workday demo adapter and failure/retry; (F) new-hire/transfer scenario; (G) CHRO dashboards and ROI; (H) navigation, polish, unit/functional tests. Prioritize actually functioning main journeys over more screen quantity.
+
+Reuse existing files where reasonable; create dedicated modules such as src/domain/rules.ts, src/domain/readiness.ts, src/domain/authorization.ts, src/domain/workflows.ts, src/integrations/MockWorkdayAdapter.ts and UI components for reviewer work queues, verification evidence, scenario launcher, structured document preview and executive metrics. Avoid unnecessary dependencies or introducing a fake backend. If no backend is present, build a convincing self-contained demo with explicit MockAdapter boundaries; do not market it as secure production software. Keep documentation updated.
+
+When complete, return:
+1. Implemented screens/features and modified file list.
+2. Demo scenario playbook with exact clicks for a 7-minute Maya/credentialing case resolution, 3-minute Priya rule configuration/test, and 2-minute David executive overview.
+3. Explicit list of SIMULATED vs FUNCTIONAL LOCAL vs REQUIRES LIVE INTEGRATION features; never conflate them.
+4. Verification results from lint/build/tests, known limitations and next production engineering/security steps.
+5. Any remaining errors or incomplete features candidly flagged. Do not claim success if not tested.
+Final product bar: A real HR Operations Lead should recognize the daily workflow; a real Healthcare Compliance Admin should see clinically appropriate verification, differentiated accountability, and legitimate rule governance; a CHRO should understand the risks, operational results and economics without being misled by synthetic numbers. The essential hero case must be end-to-end interactive and safe to demonstrate to an actual prospective customer.
+18 — Reference material for requirements validation (NOT an automatically applicable rules library)
+- The Joint Commission, Primary Source Verification definition and organizational responsibilities: https://www.jointcommission.org/en-us/knowledge-library/support-center/standards-interpretation/standards-faqs/000001472?p=1
+- CMS, State Operations Manual, Hospital Appendix A, 42 CFR 482.23 nursing licensure context: https://www.cms.gov/regulations-and-guidance/guidance/manuals/downloads/som107ap_a_hospitals.pdf
+- EEOC, healthcare workers and ADA confidentiality: https://www.eeoc.gov/laws/guidance/health-care-workers-and-americans-disabilities-act
+- USCIS, employee choice of acceptable I-9 documents: https://www.uscis.gov/sites/default/files/USCIS/Verification/I-9%20Central/Form_I-9_Employee_Information_Sheet.pdf
+- Workday Orchestrate developer overview (actual object/permission/mapping depends on customer tenant): https://developer.workday.com/documentation/GUID-2c736e32-c984-4779-b000-4fdd3fae4c23-enHYPHENus
+Use these as design context only. Do not build a regulatory determination or claim accreditation solely from these links. Employer Compliance, Legal, HRIS, Credentialing and Clinical Leadership must validate customer-specific requirements, authority and policies before production use.

@@ -27,7 +27,8 @@ export const AgentWorkflowBuilder: React.FC = () => {
     setSelectedWorkflowNode,
     isWorkflowDrawerOpen,
     setIsWorkflowDrawerOpen,
-    setCurrentScreen 
+    setCurrentScreen,
+    notify
   } = useApp();
 
   const [activeNode, setActiveNode] = useState<WorkflowNodeData>(workflowNodes[3]); // default Compliance Agent node
@@ -61,14 +62,14 @@ export const AgentWorkflowBuilder: React.FC = () => {
         {/* Governance Controls Bar */}
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => alert('Created draft revision v4.3 in Sandbox.')}
+            onClick={() => notify('Created draft revision v4.3 in Sandbox.', 'info')}
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
           >
             Create Draft
           </button>
 
           <button
-            onClick={() => alert('Workflow cloned to Staging environment.')}
+            onClick={() => notify('Workflow cloned to Staging environment.', 'info')}
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
           >
             <Copy className="w-3.5 h-3.5" />
@@ -285,7 +286,7 @@ export const AgentWorkflowBuilder: React.FC = () => {
 
           <div className="pt-2">
             <button
-              onClick={() => alert(`Saved configuration changes for ${activeNode.title}.`)}
+              onClick={() => notify(`Saved configuration changes for ${activeNode.title}.`, 'success')}
               className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition-colors"
             >
               Save Node Parameters

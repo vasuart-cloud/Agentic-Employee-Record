@@ -1,848 +1,1188 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { 
-  ShieldCheck, 
-  AlertTriangle, 
-  CheckCircle2, 
-  FileText, 
-  Mail, 
-  Send, 
-  Upload, 
-  Clock, 
-  Database, 
-  RefreshCw, 
-  Sparkles, 
-  FileDown, 
-  ExternalLink, 
-  Info, 
-  ChevronRight, 
+import { evaluateFormI9Acceptability, DEMO_REFERENCE_DATE } from '../../domain/rules';
+import { getCaseDaysUntilDue, getCaseDurationDays } from '../../domain/readiness';
+import { ClinicalDutyEligibilityState } from '../../types';
+import {
+  AlertTriangle,
+  ShieldAlert,
+  CheckCircle2,
+  FileText,
+  Send,
+  Upload,
+  Lock,
+  ExternalLink,
+  Download,
+  RefreshCw,
+  UserCheck,
+  Smartphone,
   X,
-  AlertCircle,
-  Eye,
-  Check,
-  RotateCcw
+  Info,
+  BadgeCheck
 } from 'lucide-react';
 
 export const EmployeeDossier: React.FC = () => {
-  const { 
-    selectedEmployee, 
-    selectedCase, 
-    employees, 
-    complianceCases,
-    setSelectedEmployeeId,
+  const {
+    activeRoleId,
+    switchRole,
+    can,
+    workers,
+    selectedWorker,
+    setSelectedWorkerId,
+    assignments,
+    requirements,
+    evidenceItems,
+    verifications,
+    cases,
+    selectedCase,
     setSelectedCaseId,
-    remediationTasks,
-    messageThreads,
-    approveAndSendRemediation,
-    simulateEmployeeUpload,
-    reviewEvidenceAndResolve,
-    triggerHRMSWriteback,
-    retryFailedSync,
-    currentPersona,
-    hrmsMirror
+    threads,
+    tasks,
+    hrmsMirror,
+    workerReadinessMap,
+    uploadedFilePreviews,
+    approveAndSendOutreach,
+    submitEmployeePortalResponse,
+    runPrimarySourceVerification,
+    recordClinicalEligibilityDecision,
+    reviewAndCloseCase,
+    completeNonPSVRequirement,
+    queueAndSyncWorkdayStaging,
+    setIsHRMSSyncPayloadModalOpen,
+    isHRMSSyncPayloadModalOpen,
+    isEmployeePortalOpen,
+    setIsEmployeePortalOpen,
+    notify,
+    logAuditEvent
   } = useApp();
 
-  // Panels & Drawers
   const [isWhyDrawerOpen, setIsWhyDrawerOpen] = useState(false);
-  const [isOutreachModalOpen, setIsOutreachModalOpen] = useState(false);
-  const [isEmployeePortalOpen, setIsEmployeePortalOpen] = useState(false);
-  const [isHRMSDiffModalOpen, setIsHRMSDiffModalOpen] = useState(false);
-  const [isSimulateFailure, setIsSimulateFailure] = useState(false);
-  const [isSyncingHRMS, setIsSyncingHRMS] = useState(false);
+  const [outreachSubject, setOutreachSubject] = useState('');
+  const [outreachBody, setOutreachBody] = useState('');
+  const [outreachChannel, setOutreachChannel] = useState<'Simulated Demo Portal' | 'Workday Inbox Check'>('Simulated Demo Portal');
+  const [closureNotes, setClosureNotes] = useState('Verified supporting documentation and PSV confirmation.');
+  const [clinicalNotes, setClinicalNotes] = useState('Reviewed current PSV record and clinical supervision status.');
+  const [psvFixtureChoice, setPsvFixtureChoice] = useState<'VERIFIED_ACTIVE' | 'RESTRICTED' | 'VERIFICATION_FAILED' | 'UNVERIFIED'>('VERIFIED_ACTIVE');
+  const [portalMode, setPortalMode] = useState<'file' | 'sample_doc' | 'reply_question' | 'already_submitted_workday'>('sample_doc');
+  const [portalFile, setPortalFile] = useState<File | null>(null);
+  const [portalNote, setPortalNote] = useState('');
+  const [portalClaimedExp, setPortalClaimedExp] = useState('2028-09-15');
+  const [syncLoading, setSyncLoading] = useState(false);
 
-  // Outreach draft state
-  const task = remediationTasks.find(t => t.caseId === selectedCase.id);
-  const [customSubject, setCustomSubject] = useState(task ? task.draftedSubject : 'Action Required: Submit Verification');
-  const [customBody, setCustomBody] = useState(task ? task.draftedBody : 'Please upload your renewed credential.');
+  const workerAssignments = useMemo(
+    () => assignments.filter((a) => a.workerId === selectedWorker.id),
+    [assignments, selectedWorker.id]
+  );
 
-  // Employee portal simulation state
-  const [simulatedFileName, setSimulatedFileName] = useState('CA_Board_Pharmacy_License_RPH84920_Renewal_2028.pdf');
-  const [simulatedFileSize, setSimulatedFileSize] = useState('1.8 MB (PDF)');
-  const [uploadNote, setUploadNote] = useState('Renewed license certificate from California State Board of Pharmacy. Valid through Sept 15, 2028.');
+  const workerRequirements = useMemo(
+    () => requirements.filter((r) => r.workerId === selectedWorker.id && r.applicabilityOutcome !== 'NOT_APPLICABLE'),
+    [requirements, selectedWorker.id]
+  );
 
-  // HR Review modal state
-  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [reviewNotes, setReviewNotes] = useState('Verified against California State Board of Pharmacy online roster. License #RPH-84920 confirmed active with expiration 2028-09-15.');
+  const workerCases = useMemo(
+    () => cases.filter((c) => c.workerId === selectedWorker.id),
+    [cases, selectedWorker.id]
+  );
 
-  const thread = messageThreads.find(th => th.caseId === selectedCase.id);
-  const empMirror = hrmsMirror[selectedEmployee.id];
+  const activeCase = useMemo(() => {
+    if (selectedCase && selectedCase.workerId === selectedWorker.id) return selectedCase;
+    return workerCases[0] || null;
+  }, [selectedCase, workerCases, selectedWorker.id]);
 
-  const isCaseResolved = selectedCase.status === 'GREEN_RESOLVED';
-  const isAwaitingEmployee = selectedCase.status === 'AMBER_AWAITING_EMPLOYEE';
-  const isNeedsReview = selectedCase.status === 'AMBER_NEEDS_HR_REVIEW';
-  const isOpenRed = selectedCase.status === 'RED_OPEN';
+  const activeRequirement = useMemo(
+    () => (activeCase ? requirements.find((r) => r.requirementId === activeCase.requirementId) : undefined),
+    [requirements, activeCase]
+  );
 
-  // Handle HRMS sync trigger
-  const handleTriggerSync = async () => {
-    setIsSyncingHRMS(true);
-    await triggerHRMSWriteback(selectedCase.id, isSimulateFailure);
-    setIsSyncingHRMS(false);
-  };
+  const workerEvidence = useMemo(
+    () => evidenceItems.filter((e) => e.workerId === selectedWorker.id),
+    [evidenceItems, selectedWorker.id]
+  );
 
-  // Switch between sample employees easily
-  const handleSwitchEmployee = (empId: string) => {
-    setSelectedEmployeeId(empId);
-    const emp = employees.find(e => e.id === empId);
-    if (emp && emp.activeCaseId) {
-      setSelectedCaseId(emp.activeCaseId);
-    }
+  const workerVerifications = useMemo(
+    () => verifications.filter((v) => v.workerId === selectedWorker.id),
+    [verifications, selectedWorker.id]
+  );
+
+  const activeThread = useMemo(
+    () => (activeCase ? threads.find((th) => th.caseId === activeCase.id) : undefined),
+    [threads, activeCase]
+  );
+
+  const activeTask = useMemo(
+    () => (activeCase ? tasks.find((t) => t.caseId === activeCase.id) : undefined),
+    [tasks, activeCase]
+  );
+
+  const readiness = workerReadinessMap[selectedWorker.id];
+  const mirrorRecord = hrmsMirror[selectedWorker.id];
+  const i9Eval = useMemo(() => {
+    if (!activeCase || activeCase.caseCategory !== 'Form I-9 Verification') return null;
+    return evaluateFormI9Acceptability(workerEvidence);
+  }, [activeCase, workerEvidence]);
+
+  const defaultSubject = activeTask?.draftedSubject || (activeCase ? `Action Required: ${activeCase.title}` : '');
+  const defaultBody =
+    activeTask?.draftedBody ||
+    (activeCase
+      ? `Hi ${selectedWorker.name},\n\nOur credentialing check flagged "${activeCase.title}". Please upload your current documentation or confirm submission status via the portal.\n\nThank you,\nHR Operations`
+      : '');
+
+  const currentSubject = outreachSubject || defaultSubject;
+  const currentBody = outreachBody || defaultBody;
+
+  const isPSVRequired = activeRequirement?.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION';
+  const canSendOutreach = can('SEND_EMPLOYEE_OUTREACH');
+  const canRunPSV = can('RUN_PRIMARY_SOURCE_VERIFICATION');
+  const canRecordClinical = can('RECORD_CLINICAL_DUTY_ELIGIBILITY');
+  const canCloseCase = can('CLOSE_ADMINISTRATIVE_CASE', {
+    requiresPSV: isPSVRequired,
+    hasAuthoritativePSV: activeCase?.verificationState === 'VERIFIED_ACTIVE'
+  });
+
+  const handleDownloadAuditPacket = () => {
+    const packet = {
+      reportTitle: 'Agentic Employee Records — Demo Evidence & Readiness Packet',
+      syntheticDemoNotice: 'DEMO SYNTHETIC DATA ONLY — Not an official HIPAA/SOC2 attestation or live Workday extract.',
+      privacyExclusionNotice: 'Occupational Health medical details (PHI/ADA) are strictly excluded. Clearance status only.',
+      generatedAtUtc: new Date().toISOString(),
+      worker: {
+        id: selectedWorker.employeeNumber,
+        name: selectedWorker.name,
+        primaryRole: selectedWorker.primaryRole,
+        facility: selectedWorker.primaryFacilityName,
+        employmentStatus: selectedWorker.employmentStatus,
+        occupationalHealthStatusOnly: selectedWorker.occupationalHealthSummary.clearanceStatus,
+        privilegingReference: selectedWorker.privilegingReference,
+        clinicalDutyEligibility: selectedWorker.clinicalEligibility
+      },
+      readinessSummary: readiness,
+      requirements: workerRequirements,
+      evidenceMetadata: workerEvidence.map((e) => ({
+        id: e.id,
+        documentName: e.documentName,
+        sourceSystem: e.sourceSystem,
+        status: e.status,
+        extractionConfidence: e.extractionConfidence,
+        extractionMethodNote: e.extractionMethodNote
+      })),
+      verifications: workerVerifications,
+      cases: workerCases.map((c) => ({
+        caseNumber: c.caseNumber,
+        title: c.title,
+        workflowState: c.workflowState,
+        documentState: c.documentState,
+        verificationState: c.verificationState,
+        clinicalEligibilityState: c.clinicalEligibilityState,
+        externalSyncState: c.externalSyncState,
+        reviewDecisions: c.reviewDecisions
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(packet, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `DEMO_Evidence_Packet_${selectedWorker.employeeNumber}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    logAuditEvent({
+      actor: activeRoleId,
+      actorRole: activeRoleId,
+      action: 'EXPORT_DEMO_EVIDENCE_PACKET',
+      category: 'EVIDENCE',
+      source: 'Employee Dossier',
+      targetEntityId: selectedWorker.id,
+      workerId: selectedWorker.id,
+      details: `Exported DEMO evidence packet for ${selectedWorker.name} (PHI excluded).`
+    });
+    notify(`Downloaded DEMO evidence packet for ${selectedWorker.name} (PHI excluded).`, 'success');
   };
 
   return (
-    <div className="space-y-6 text-left">
-      {/* Top Banner: Employee Switcher Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">
-            Inspect Employee File:
-          </span>
-          <div className="flex gap-1.5 flex-wrap">
-            {employees.slice(0, 5).map((e) => (
-              <button
-                key={e.id}
-                onClick={() => handleSwitchEmployee(e.id)}
-                className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
-                  selectedEmployee.id === e.id
-                    ? 'bg-teal-700 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                {e.name} ({e.id})
-                {e.id === 'EMP-10419' && !isCaseResolved && (
-                  <span className="ml-1.5 px-1 py-0.2 rounded bg-rose-500 text-white text-[9px] font-bold">
-                    HERO CASE
-                  </span>
-                )}
-              </button>
-            ))}
+    <div className="space-y-6">
+      {/* Worker Switcher Bar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-full bg-teal-700 text-white font-semibold text-sm flex items-center justify-center shrink-0">
+            {selectedWorker.initials}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-slate-400 font-mono text-[11px]">System of Record: Workday HCM</span>
-        </div>
-      </div>
-
-      {/* 3-Panel Main Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT COLUMN: Employee Profile & Document Checklist (4 Cols) */}
-        <div className="lg:col-span-4 space-y-5">
-          {/* Employee Header Card */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <img 
-                  src={selectedEmployee.avatarUrl}
-                  alt={selectedEmployee.name}
-                  referrerPolicy="no-referrer"
-                  className="w-14 h-14 rounded-full object-cover border-2 border-slate-200 shadow-xs"
-                />
-                <div>
-                  <h2 className="font-bold text-base text-slate-900 leading-tight">
-                    {selectedEmployee.name}
-                  </h2>
-                  <div className="text-xs text-slate-500 font-mono mt-0.5">
-                    {selectedEmployee.id} · {selectedEmployee.role}
-                  </div>
-                  <div className="text-[11px] text-teal-800 font-medium">
-                    {selectedEmployee.department} ({selectedEmployee.location})
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Health Score & Status Gauge */}
-            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">File Health Score</div>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className={`text-2xl font-black ${
-                    selectedEmployee.fileHealthScore === 100 ? 'text-emerald-700' : 'text-rose-600'
-                  }`}>
-                    {selectedEmployee.fileHealthScore}%
-                  </span>
-                  <span className="text-slate-400 text-[10px]">/ 100</span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">Compliance Status</div>
-                <div className="mt-1">
-                  {selectedEmployee.healthStatus === 'Complete' ? (
-                    <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Verified Complete
-                    </span>
-                  ) : (
-                    <span className="text-xs font-bold text-rose-700 flex items-center gap-1">
-                      <AlertTriangle className="w-4 h-4" />
-                      {selectedEmployee.healthStatus}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 text-[11px] text-slate-500 flex justify-between">
-              <span>Manager: <strong>{selectedEmployee.manager}</strong></span>
-              <span>Scanned: {selectedEmployee.lastScanTime}</span>
-            </div>
-          </div>
-
-          {/* Document Inventory & Verification Checklist */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs font-bold text-slate-900">
-              <span>Required Evidence Checklist</span>
-              <span className="text-[10px] font-mono text-slate-400">Policy v3.8 / v4.2</span>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              {/* Item 1: State Licensure (The hero item!) */}
-              <div className={`p-3 rounded-lg border transition-all ${
-                isCaseResolved
-                  ? 'border-emerald-200 bg-emerald-50/50'
-                  : 'border-rose-200 bg-rose-50/50'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-slate-500" />
-                    <span>CA Pharmacist License</span>
-                  </div>
-                  {isCaseResolved ? (
-                    <span className="text-[10px] font-bold text-emerald-800 px-2 py-0.5 rounded bg-emerald-100 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      Valid (2028-09-15)
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold text-rose-800 px-2 py-0.5 rounded bg-rose-100 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" />
-                      Expired (Sept 15, 2026)
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
-                  <span>Source: SharePoint Online</span>
-                  <span className="font-mono">#RPH-84920</span>
-                </div>
-              </div>
-
-              {/* Item 2: Form I-9 */}
-              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-slate-400" />
-                    <span>Form I-9 Employment Verification</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Verified
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
-                  <span>List A: US Passport Verified</span>
-                  <span>Workday</span>
-                </div>
-              </div>
-
-              {/* Item 3: Ethics Handbook */}
-              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50/50">
-                <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-slate-400" />
-                    <span>Code of Ethics Acknowledgment</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Signed
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1 flex justify-between">
-                  <span>DocuSign Envelope Completed</span>
-                  <span>2026-03-02</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CENTER / RIGHT COLUMN: Active Case Details, Why Flagged Drawer, Remediation Flow (8 Cols) */}
-        <div className="lg:col-span-8 space-y-5">
-          {/* HERO CASE ACTION HEADER */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold">
-                    {selectedCase.caseNumber}
-                  </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                    isCaseResolved ? 'bg-emerald-100 text-emerald-800' :
-                    isAwaitingEmployee || isNeedsReview ? 'bg-amber-100 text-amber-800' :
-                    'bg-rose-100 text-rose-800'
-                  }`}>
-                    {selectedCase.severity} Priority
-                  </span>
-                </div>
-                <h3 className="font-bold text-base text-slate-900 leading-snug">
-                  {selectedCase.documentType}
-                </h3>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  {selectedCase.findingSummary}
-                </p>
-              </div>
-
-              {/* Status Pill */}
-              <div className="text-right shrink-0">
-                <div className="text-[10px] font-mono text-slate-400 mb-0.5">RECORD HEALTH</div>
-                {isCaseResolved ? (
-                  <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>GREEN · Verified Complete</span>
-                  </div>
-                ) : isAwaitingEmployee ? (
-                  <div className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-amber-600" />
-                    <span>AMBER · Awaiting Employee</span>
-                  </div>
-                ) : isNeedsReview ? (
-                  <div className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-amber-600" />
-                    <span>AMBER · Needs HR Review</span>
-                  </div>
-                ) : (
-                  <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-lg flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>RED · Non-Compliant Gap</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Action Bar (Why Flagged, Prepare Request, Review Evidence, Sync HRMS) */}
-            <div className="pt-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                {/* Button 1: Why Flagged Drawer */}
-                <button
-                  onClick={() => setIsWhyDrawerOpen(true)}
-                  className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-800 flex items-center gap-1.5 transition-colors"
-                >
-                  <Info className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Explainability: "Why Flagged?"</span>
-                </button>
-
-                {/* Button 2: Prepare / Dispatch Employee Request */}
-                {!isCaseResolved && isOpenRed && (
-                  <button
-                    onClick={() => setIsOutreachModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>Prepare Employee Request</span>
-                  </button>
-                )}
-
-                {/* Button 3: Simulated Employee Portal (when outreach is dispatched) */}
-                {(isAwaitingEmployee || isNeedsReview) && !isCaseResolved && (
-                  <button
-                    onClick={() => setIsEmployeePortalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all animate-pulse"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Open Simulated Employee Portal as Daniel</span>
-                  </button>
-                )}
-
-                {/* Button 4: Review received evidence & Resolve */}
-                {isNeedsReview && !isCaseResolved && (
-                  <button
-                    onClick={() => setIsReviewModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Review Evidence & Approve Closure</span>
-                  </button>
-                )}
-              </div>
-
-              {/* HRMS Writeback Button & Badge */}
-              <div className="flex items-center gap-2">
-                {isCaseResolved && (
-                  <div className="flex items-center gap-2">
-                    {selectedCase.hrmsSyncStatus === 'SYNCED' ? (
-                      <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Verified complete · Synced to Workday</span>
-                      </span>
-                    ) : selectedCase.hrmsSyncStatus === 'SYNCING' ? (
-                      <span className="text-xs font-bold text-teal-800 bg-teal-50 border border-teal-200 px-3 py-1 rounded-lg flex items-center gap-1.5 animate-pulse">
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Syncing to Workday HCM...</span>
-                      </span>
-                    ) : selectedCase.hrmsSyncStatus === 'FAILED' ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                          Writeback Failed
-                        </span>
-                        <button
-                          onClick={handleTriggerSync}
-                          className="px-2.5 py-1 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold"
-                        >
-                          Retry Sync
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={handleTriggerSync}
-                        disabled={isSyncingHRMS}
-                        className="px-3 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncingHRMS ? 'animate-spin' : ''}`} />
-                        <span>Write Back to Workday HCM</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ACTIVITY & CONVERSATION THREAD */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs font-bold text-slate-800">
-              <span className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-slate-400" />
-                Audit & Activity Timeline
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-semibold text-slate-900">{selectedWorker.name}</h1>
+              <span className="font-mono text-xs text-slate-500">{selectedWorker.employeeNumber}</span>
+              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium">
+                {selectedWorker.employmentStatus} · {selectedWorker.workerType}
               </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                Rule Version: {selectedCase.detailedWhy.policyVersion}
-              </span>
-            </div>
-
-            {/* Timeline Stream */}
-            <div className="space-y-4 text-xs">
-              {/* Event 1: AI Ingestion & Finding */}
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-full bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-700 shrink-0 mt-0.5">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-slate-900">
-                      Compliance Agent flagged expired credential
-                    </span>
-                    <span className="text-[10px] text-slate-400">{selectedCase.detectedDate}</span>
-                  </div>
-                  <p className="text-slate-600 text-[11px] leading-relaxed">
-                    Evaluated California Board of Pharmacy license against {selectedCase.detailedWhy.policyName}. License #RPH-84920 expired on 2026-09-15. Overdue by 58 days.
-                  </p>
-                  <div className="mt-2 text-[10px] text-slate-400 font-mono">
-                    Run ID: {selectedCase.detailedWhy.agentRunId} · Confidence: {selectedCase.detailedWhy.agentConfidence}%
-                  </div>
-                </div>
-              </div>
-
-              {/* Event 2: Outreach Messages from Thread */}
-              {thread && thread.messages.map((msg) => (
-                <div key={msg.id} className="flex items-start gap-3">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                    msg.sender === 'HR_OPERATIONS' 
-                      ? 'bg-teal-100 text-teal-800 border border-teal-200' 
-                      : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
-                  }`}>
-                    {msg.sender === 'HR_OPERATIONS' ? <Mail className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
-                  </div>
-                  <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3 shadow-xs">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-slate-900">{msg.senderName}</span>
-                      <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
-                    </div>
-                    <p className="text-slate-700 text-[11px] whitespace-pre-line leading-relaxed">
-                      {msg.content}
-                    </p>
-
-                    {/* Attachments if any */}
-                    {msg.attachments && msg.attachments.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase">Uploaded Evidence:</div>
-                        {msg.attachments.map((att, i) => (
-                          <div key={i} className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200 text-slate-800">
-                            <span className="font-mono text-[11px]">{att.filename} ({att.size})</span>
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              Validated Format
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {/* Event 3: Closure & Sync Confirmation if Resolved */}
-              {isCaseResolved && (
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0 mt-0.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="flex-1 bg-emerald-50/60 border border-emerald-200 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-emerald-900">
-                        Case Approved & Resolved by {selectedCase.resolvedBy || currentPersona.name}
-                      </span>
-                      <span className="text-[10px] text-emerald-700">Verified Complete</span>
-                    </div>
-                    <p className="text-emerald-800 text-[11px] leading-relaxed">
-                      Replacement California Pharmacist License verified through September 15, 2028. File health restored to 100%. Workday HRMS compliance attributes queued for writeback.
-                    </p>
-                  </div>
-                </div>
+              {readiness?.daysToStart !== null && readiness && (
+                <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium tabular-nums">
+                  Start Date: {selectedWorker.startDate} ({readiness.daysToStart} days to start)
+                </span>
               )}
             </div>
+            <div className="text-xs text-slate-600 mt-0.5">
+              {selectedWorker.primaryRole} · {selectedWorker.primaryDepartment} · {selectedWorker.primaryFacilityName} ({selectedWorker.primaryState})
+              {selectedWorker.sponsoringOrganization && ` · Agency: ${selectedWorker.sponsoringOrganization}`}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedWorker.id}
+            onChange={(e) => {
+              const nextId = e.target.value;
+              setSelectedWorkerId(nextId);
+              const firstCase = cases.find((c) => c.workerId === nextId);
+              if (firstCase) setSelectedCaseId(firstCase.id);
+              setOutreachSubject('');
+              setOutreachBody('');
+            }}
+            aria-label="Select worker dossier"
+            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-800"
+          >
+            {workers.map((w) => {
+              const r = workerReadinessMap[w.id];
+              return (
+                <option key={w.id} value={w.id}>
+                  {w.name} ({w.primaryRole}) — {r?.readinessPercent !== null ? `${r?.readinessPercent}%` : 'Unknown'}
+                </option>
+              );
+            })}
+          </select>
+
+          <button
+            onClick={handleDownloadAuditPacket}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 flex items-center gap-1.5"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Demo Packet</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Multi-Assignment + Restricted Boundary Summary Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        {/* Whole-file Readiness */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-800">Whole-File Readiness</span>
+            <span
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold tabular-nums ${
+                readiness?.overallStatus === 'READY'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : readiness?.overallStatus === 'CRITICAL_RED'
+                  ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200'
+              }`}
+            >
+              {readiness?.readinessPercent !== null
+                ? `${readiness?.readinessPercent}% (${readiness?.satisfiedRequirementsCount}/${readiness?.totalApplicableRequirements})`
+                : 'Coverage Unknown'}
+            </span>
+          </div>
+          <div className="text-slate-600">{readiness?.overallStatusLabel}</div>
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">Admin / Non-PSV Onboarding:</span>
+            <span className="font-semibold text-slate-800 tabular-nums">
+              {readiness?.administrativeOnboardingPercent}%
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">Clinical Duty Eligibility:</span>
+            <span className="font-semibold text-slate-800">
+              {selectedWorker.clinicalEligibility.replace(/_/g, ' ')}
+            </span>
+          </div>
+        </div>
+
+        {/* Workday Assignments & External MSO */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+          <div className="font-semibold text-slate-800">
+            Workday Assignments ({workerAssignments.length})
+          </div>
+          <div className="space-y-1.5">
+            {workerAssignments.map((a) => (
+              <div key={a.id} className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                <div className="font-medium text-slate-800">
+                  {a.jobProfile} · {a.facilityName} ({a.state})
+                </div>
+                <div>
+                  Effective {a.effectiveStartDate} · {a.isPrimary ? 'Primary' : 'Concurrent'} ·{' '}
+                  {a.isClinicalDuty ? 'Clinical Scope' : 'Non-Clinical'}
+                </div>
+              </div>
+            ))}
+          </div>
+          {selectedWorker.privilegingReference.status !== 'NOT_APPLICABLE' && (
+            <div className="text-[11px] p-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700">
+              <strong>External Medical Staff Office (MSO):</strong>{' '}
+              {selectedWorker.privilegingReference.status} ({selectedWorker.privilegingReference.msoReferenceId}) — Read-only external reference; privileging is never granted here.
+            </div>
+          )}
+        </div>
+
+        {/* Occupational Health Privacy Boundary */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+            <Lock className="w-3.5 h-3.5 text-slate-500" />
+            <span>Occupational Health Boundary</span>
+          </div>
+          <div className="text-[11px] font-semibold text-slate-800">
+            Clearance Status: {selectedWorker.occupationalHealthSummary.clearanceStatus}
+          </div>
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            {selectedWorker.occupationalHealthSummary.restrictedAccessNote}
+          </p>
+          <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+            HIPAA / ADA Boundary: Raw medical, vaccination, or accommodation records are strictly excluded from HR, Compliance Admin, Executive views, and audit exports.
           </div>
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* DRAWER: WHY FLAGGED? EXPLAINABILITY & POLICY CITATIONS */}
-      {/* ========================================================================= */}
-      {isWhyDrawerOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex justify-end z-50">
-          <div className="bg-white w-full max-w-xl h-full shadow-2xl border-l border-slate-200 p-6 overflow-y-auto space-y-5 text-left">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-teal-700" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  AI Explainability & Evidence Drill-Down
-                </h3>
+      {/* Multi-Requirement Tracker for Selected Worker */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              Applicable Credential &amp; Compliance Requirements ({workerRequirements.length})
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Whole-file readiness updates only as each applicable requirement is verified and closed.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {workerRequirements.map((req) => {
+            const linkedCase = workerCases.find((c) => c.requirementId === req.requirementId);
+            const isSelected = linkedCase && activeCase && linkedCase.id === activeCase.id;
+            const satisfied =
+              req.documentState === 'ACCEPTED' &&
+              (req.verificationMethod !== 'PRIMARY_SOURCE_VERIFICATION' ||
+                req.verificationState === 'VERIFIED_ACTIVE');
+
+            return (
+              <div
+                key={req.requirementId}
+                onClick={() => linkedCase && setSelectedCaseId(linkedCase.id)}
+                className={`p-3 rounded-xl border transition-colors ${
+                  linkedCase ? 'cursor-pointer' : ''
+                } ${
+                  isSelected
+                    ? 'border-teal-600 bg-teal-50/40'
+                    : 'border-slate-200 bg-slate-50/40 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-mono text-[10px] font-semibold text-slate-500">
+                      {req.ruleCode} · {req.verificationMethod.replace(/_/g, ' ')}
+                    </div>
+                    <div className="font-semibold text-slate-900 mt-0.5">{req.name}</div>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
+                      satisfied
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}
+                  >
+                    {satisfied ? 'SATISFIED' : 'OPEN'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-slate-600">
+                  <span>Doc: <strong>{req.documentState}</strong></span>
+                  <span>PSV: <strong>{req.verificationState}</strong></span>
+                  {linkedCase && (
+                    <span className="text-teal-800 font-semibold">
+                      Case {linkedCase.caseNumber} ({linkedCase.workflowState})
+                    </span>
+                  )}
+                </div>
               </div>
-              <button 
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Active Case Workspace */}
+      {activeCase ? (
+        <div className="space-y-5">
+          {/* Case Banner + Four Independent State Dimensions */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+              <div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-mono font-semibold text-teal-800">{activeCase.caseNumber}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="font-semibold text-slate-700">{activeCase.caseCategory}</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="tabular-nums text-slate-500">
+                    Open {getCaseDurationDays(activeCase, DEMO_REFERENCE_DATE)}d ·{' '}
+                    {getCaseDaysUntilDue(activeCase, DEMO_REFERENCE_DATE) < 0
+                      ? `${Math.abs(getCaseDaysUntilDue(activeCase, DEMO_REFERENCE_DATE))}d overdue`
+                      : `Due ${activeCase.dueDate}`}
+                  </span>
+                </div>
+                <h2 className="text-base font-semibold text-slate-900 mt-1">{activeCase.title}</h2>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">{activeCase.findingSummary}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setIsWhyDrawerOpen(true)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-800 flex items-center gap-1.5"
+                >
+                  <Info className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Why Flagged? &amp; Evidence</span>
+                </button>
+                <button
+                  onClick={() => setIsEmployeePortalOpen(true)}
+                  className="px-3 py-1.5 rounded-lg border border-teal-700 bg-white hover:bg-teal-50 text-teal-800 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Open Employee Portal</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Four Separated Dimensions */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100 text-xs">
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                  1. Document State
+                </div>
+                <div className="font-semibold text-slate-900 mt-1">{activeCase.documentState}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Upload does not verify licensure</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                  2. PSV Verification
+                </div>
+                <div className="font-semibold text-slate-900 mt-1">{activeCase.verificationState}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  {isPSVRequired ? 'Authoritative board check required' : 'Non-PSV organizational check'}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                  3. Clinical Duty Eligibility
+                </div>
+                <div className="font-semibold text-slate-900 mt-1">
+                  {selectedWorker.clinicalEligibility.replace(/_/g, ' ')}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Designated leader decision only</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                  4. Workday Staging Sync
+                </div>
+                <div className="font-semibold text-slate-900 mt-1">{activeCase.externalSyncState}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Staging custom object only</div>
+              </div>
+            </div>
+
+            {/* Form I-9 Acceptability Check (List A vs List B + C) */}
+            {i9Eval && (
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <div className="font-semibold text-slate-900">
+                  Form I-9 Section 2 Acceptability Rule (List A OR List B + List C)
+                </div>
+                <div className="text-slate-700">{i9Eval.summary}</div>
+                {i9Eval.missingReason && (
+                  <div className="text-amber-800 font-medium">{i9Eval.missingReason}</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 2-Column Operational Workspace */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
+            {/* Left: Outreach + Portal Thread + Evidence */}
+            <div className="space-y-5">
+              {/* HR Outreach Panel */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Step 1 · HR Operations Outreach (Simulated)
+                  </h3>
+                  <span className="text-[11px] text-slate-500">Owner: {activeCase.hrOutreachOwner}</span>
+                </div>
+
+                {!canSendOutreach.allowed && (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                    {canSendOutreach.reason}
+                  </div>
+                )}
+
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                      Channel
+                    </label>
+                    <select
+                      value={outreachChannel}
+                      onChange={(e) => setOutreachChannel(e.target.value as any)}
+                      disabled={!canSendOutreach.allowed}
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs"
+                    >
+                      <option value="Simulated Demo Portal">Simulated Demo Portal (No real email sent)</option>
+                      <option value="Workday Inbox Check">Workday Inbox Reconciliation Check</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                      Subject
+                    </label>
+                    <input
+                      type="text"
+                      value={currentSubject}
+                      onChange={(e) => setOutreachSubject(e.target.value)}
+                      disabled={!canSendOutreach.allowed}
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                      Message Draft
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={currentBody}
+                      onChange={(e) => setOutreachBody(e.target.value)}
+                      disabled={!canSendOutreach.allowed}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <button
+                      onClick={() => approveAndSendOutreach(activeCase.id, currentSubject, currentBody, outreachChannel)}
+                      disabled={!canSendOutreach.allowed}
+                      className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white font-semibold flex items-center gap-1.5"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Approve &amp; Send Simulated Outreach</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsEmployeePortalOpen(true)}
+                      className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium flex items-center gap-1.5"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Simulate Employee Upload</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Thread History */}
+                {activeThread && activeThread.messages.length > 0 && (
+                  <div className="pt-3 border-t border-slate-100 space-y-2">
+                    <div className="text-[11px] font-semibold text-slate-700">
+                      Portal Communication History
+                    </div>
+                    {activeThread.messages.map((m) => (
+                      <div key={m.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-slate-500">
+                          <span className="font-semibold text-slate-800">{m.senderName} ({m.senderRole})</span>
+                          <span>{m.timestamp} · {m.deliveryStatus}</span>
+                        </div>
+                        <p className="text-slate-700 whitespace-pre-line">{m.content}</p>
+                        {m.attachmentMetadata && (
+                          <div className="text-[11px] font-mono text-teal-800 bg-teal-50 border border-teal-200 px-2 py-1 rounded">
+                            Attachment: {m.attachmentMetadata.fileName} ({m.attachmentMetadata.fileSize}) — {m.attachmentMetadata.extractionStatusLabel}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Submitted Evidence Items */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Worker Evidence Records ({workerEvidence.length})
+                </h3>
+                {workerEvidence.length === 0 ? (
+                  <div className="text-slate-500 py-4 text-center bg-slate-50 rounded-lg border border-slate-200">
+                    No evidence records stored for this worker yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {workerEvidence.map((ev) => {
+                      const preview = uploadedFilePreviews[ev.id];
+                      return (
+                        <div key={ev.id} className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 font-semibold text-slate-900">
+                              <FileText className="w-4 h-4 text-teal-700 shrink-0" />
+                              <span>{ev.documentName}</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-semibold text-slate-700">
+                              {ev.status}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-600">
+                            Source: {ev.sourceSystem} · Size: {ev.fileSize} · Extraction confidence: <strong>{ev.extractionConfidence}%</strong>
+                          </div>
+                          <div className="text-[10px] text-slate-500">{ev.extractionMethodNote}</div>
+                          {preview && (
+                            <div className="pt-1">
+                              {preview.mimeType.startsWith('image/') ? (
+                                <img
+                                  src={preview.objectUrl}
+                                  alt={preview.fileName}
+                                  className="max-h-32 rounded border border-slate-200"
+                                />
+                              ) : (
+                                <div className="text-[11px] text-teal-800 font-medium">
+                                  Local browser file attached ({preview.fileName}) — held in session memory only.
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: PSV Check, Clinical Eligibility, Case Closure, Workday Staging */}
+            <div className="space-y-5">
+              {/* Primary Source Verification (Alex Morgan) */}
+              {isPSVRequired && (
+                <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                      <BadgeCheck className="w-4 h-4 text-teal-700" />
+                      <span>Step 2 · Primary Source Verification (Simulated Board Check)</span>
+                    </h3>
+                    <span className="text-[11px] font-medium text-slate-600">
+                      {activeCase.verificationState}
+                    </span>
+                  </div>
+
+                  {!canRunPSV.allowed ? (
+                    <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
+                      <div className="text-amber-950 font-medium">{canRunPSV.reason}</div>
+                      <button
+                        onClick={() => switchRole('cred_alex', 'employees')}
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs inline-flex items-center gap-1.5"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Switch to Alex Morgan (Credentialing Reviewer)</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                          Select Simulated Board Fixture Outcome (Demo Only — No Live Board API)
+                        </label>
+                        <select
+                          value={psvFixtureChoice}
+                          onChange={(e) => setPsvFixtureChoice(e.target.value as any)}
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs"
+                        >
+                          <option value="VERIFIED_ACTIVE">VERIFIED_ACTIVE — Active &amp; unencumbered through 2028-09-15</option>
+                          <option value="RESTRICTED">RESTRICTED — Board disciplinary suspension (blocks closure &amp; escalates)</option>
+                          <option value="VERIFICATION_FAILED">VERIFICATION_FAILED — Board endpoint 503 unavailable</option>
+                          <option value="UNVERIFIED">UNVERIFIED — License # / Name mismatch</option>
+                        </select>
+                      </div>
+                      <button
+                        onClick={() => runPrimarySourceVerification(activeCase.id, psvFixtureChoice)}
+                        className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold"
+                      >
+                        Run Simulated Primary Source Verification
+                      </button>
+                    </div>
+                  )}
+
+                  {workerVerifications.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                      {workerVerifications.slice(0, 2).map((v) => (
+                        <div key={v.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                          <div className="flex justify-between font-semibold text-slate-800">
+                            <span>{v.returnedStatus}</span>
+                            <span className="font-mono">{v.receiptReference}</span>
+                          </div>
+                          <div className="text-slate-600 mt-0.5">
+                            {v.sourceName} · Verified by {v.verifierName} ({v.checkedAt})
+                          </div>
+                          {v.restrictionsNote && (
+                            <div className="text-rose-700 font-medium mt-0.5">{v.restrictionsNote}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Clinical Escalation & Eligibility Decision */}
+              {(activeCase.escalation || activeCase.clinicalEligibilityState !== 'NOT_APPLICABLE') && (
+                <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-rose-600" />
+                      <span>Clinical Escalation &amp; Duty Eligibility</span>
+                    </h3>
+                    <span className="text-[11px] font-semibold text-slate-700">
+                      {selectedWorker.clinicalEligibility.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+
+                  {activeCase.escalation && (
+                    <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-[11px] text-rose-950 space-y-1">
+                      <div className="font-semibold">
+                        Escalated to: {activeCase.escalation.escalatedToName} ({activeCase.escalation.status})
+                      </div>
+                      <p>{activeCase.escalation.reason}</p>
+                    </div>
+                  )}
+
+                  {!canRecordClinical.allowed ? (
+                    <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                      {canRecordClinical.reason}
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      <textarea
+                        rows={2}
+                        value={clinicalNotes}
+                        onChange={(e) => setClinicalNotes(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
+                        placeholder="Clinical leadership review notes..."
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() =>
+                            recordClinicalEligibilityDecision(
+                              activeCase.id,
+                              'AUTHORIZED_BY_DESIGNATED_LEADER' as ClinicalDutyEligibilityState,
+                              clinicalNotes
+                            )
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold"
+                        >
+                          Record Authorized Duty Eligibility
+                        </button>
+                        <button
+                          onClick={() =>
+                            recordClinicalEligibilityDecision(
+                              activeCase.id,
+                              'RESTRICTED_BY_AUTHORIZED_DECISION' as ClinicalDutyEligibilityState,
+                              clinicalNotes
+                            )
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white font-semibold"
+                        >
+                          Restrict Clinical Duty
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Administrative Case Closure */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Step 3 · Final Administrative Case Closure
+                </h3>
+
+                {activeCase.workflowState === 'resolved' ? (
+                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>
+                      Closed by {activeCase.resolvedBy} at {activeCase.resolvedAt}.
+                    </span>
+                  </div>
+                ) : isPSVRequired ? (
+                  <div className="space-y-3">
+                    {!canCloseCase.allowed && (
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                        {canCloseCase.reason}
+                        {activeRoleId === 'cred_alex' && (
+                          <button
+                            onClick={() => switchRole('hr_ops_maya', 'employees')}
+                            className="block mt-2 px-3 py-1 rounded bg-slate-900 text-white font-semibold"
+                          >
+                            Switch back to Maya (HR Ops) for Final Closure
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <textarea
+                      rows={2}
+                      value={closureNotes}
+                      onChange={(e) => setClosureNotes(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => reviewAndCloseCase(activeCase.id, true, closureNotes)}
+                        disabled={!canCloseCase.allowed}
+                        className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white font-semibold"
+                      >
+                        Approve &amp; Close Case
+                      </button>
+                      <button
+                        onClick={() =>
+                          reviewAndCloseCase(activeCase.id, false, 'Requested clearer documentation.')
+                        }
+                        disabled={!can('REVIEW_ORDINARY_HR_EVIDENCE').allowed}
+                        className="px-3 py-2 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-40 font-semibold"
+                      >
+                        Reject Evidence
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-slate-600">
+                      This requirement uses <strong>{activeRequirement?.verificationMethod.replace(/_/g, ' ')}</strong> rather than statutory board PSV.
+                    </p>
+                    <textarea
+                      rows={2}
+                      value={closureNotes}
+                      onChange={(e) => setClosureNotes(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
+                    />
+                    <button
+                      onClick={() => completeNonPSVRequirement(activeCase.id, closureNotes)}
+                      disabled={!can('REVIEW_ORDINARY_HR_EVIDENCE').allowed}
+                      className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white font-semibold"
+                    >
+                      Verify Roster / HR Evidence &amp; Close Requirement
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Workday Staging Writeback */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Step 4 · Workday Staging Sync (Simulated Adapter)
+                  </h3>
+                  <button
+                    onClick={() => setIsHRMSSyncPayloadModalOpen(true)}
+                    className="text-[11px] font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Inspect Payload &amp; Mirror</span>
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-600">
+                  Writes readiness summary ONLY to <code className="font-mono bg-slate-100 px-1 rounded">Workday_Custom_Compliance_Staging__c</code>. Master worker records and payroll remain read-only.
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    disabled={syncLoading || !can('TRIGGER_WORKDAY_SYNC').allowed}
+                    onClick={async () => {
+                      setSyncLoading(true);
+                      await queueAndSyncWorkdayStaging(activeCase.id, false);
+                      setSyncLoading(false);
+                    }}
+                    className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold flex items-center gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncLoading ? 'animate-spin' : ''}`} />
+                    <span>Sync to Workday Staging (Success)</span>
+                  </button>
+                  <button
+                    disabled={syncLoading || !can('TRIGGER_WORKDAY_SYNC').allowed}
+                    onClick={async () => {
+                      setSyncLoading(true);
+                      await queueAndSyncWorkdayStaging(activeCase.id, true);
+                      setSyncLoading(false);
+                    }}
+                    className="px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-900 font-semibold"
+                  >
+                    Simulate HTTP 504 Timeout
+                  </button>
+                </div>
+
+                {mirrorRecord && (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] space-y-1">
+                    <div className="font-semibold text-slate-800">
+                      Workday Staging Mirror ({mirrorRecord.workerId})
+                    </div>
+                    <div>
+                      Summary: <strong>{mirrorRecord.stagingObject.credentialReadinessSummary}</strong> · Reconciliation:{' '}
+                      <strong>{mirrorRecord.stagingObject.reconciliationStatus}</strong>
+                    </div>
+                    {mirrorRecord.stagingObject.verifiedLicenseThroughDate && (
+                      <div>
+                        Verified Through: <span className="font-mono">{mirrorRecord.stagingObject.verifiedLicenseThroughDate}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-xs text-slate-600">
+          No open or historical cases for {selectedWorker.name}. All applicable requirements are currently satisfied.
+        </div>
+      )}
+
+      {/* WHY FLAGGED DRAWER */}
+      {isWhyDrawerOpen && activeCase && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="fixed inset-0 bg-slate-900/50" onClick={() => setIsWhyDrawerOpen(false)} />
+          <div className="relative z-10 w-full max-w-lg bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col text-xs">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div>
+                <div className="text-[11px] font-semibold text-teal-800 uppercase tracking-wider">
+                  Explainability &amp; Source Audit
+                </div>
+                <h2 className="text-base font-semibold text-slate-900 mt-0.5">
+                  Why Was {activeCase.caseNumber} Flagged?
+                </h2>
+              </div>
+              <button
                 onClick={() => setIsWhyDrawerOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                aria-label="Close Why Flagged drawer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 space-y-1">
-              <div className="font-bold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Deterministic Compliance Reasoning</span>
-              </div>
-              <p className="text-[11px] text-teal-800 leading-relaxed">
-                Agentic Employee Records does not make black-box guesses. The Compliance Agent compares extracted evidence fields against versioned employer policy clauses.
-              </p>
-            </div>
-
-            {/* Exact Policy Clause Citation */}
-            <div className="space-y-1.5 text-xs">
-              <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                Governing Employer Policy Citation
-              </span>
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                <div className="font-bold text-slate-900">
-                  {selectedCase.detailedWhy.policyName}
-                </div>
-                <div className="text-[11px] font-mono text-teal-800 font-semibold">
-                  {selectedCase.detailedWhy.clause}
-                </div>
-                <blockquote className="text-[11px] text-slate-600 italic border-l-2 border-teal-600 pl-2.5 py-0.5 bg-white rounded-r">
-                  "{selectedCase.detailedWhy.clauseText}"
-                </blockquote>
-              </div>
-            </div>
-
-            {/* Found Evidence & Expiration Comparison */}
-            <div className="space-y-1.5 text-xs">
-              <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                Evaluated Evidence & Repository Provenance
-              </span>
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-[11px]">
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-semibold text-slate-900">Rule &amp; Policy Citation</div>
                 <div>
-                  <span className="text-slate-400">Found Evidence:</span>
-                  <div className="font-semibold text-slate-800 mt-0.5">
-                    {selectedCase.detailedWhy.foundEvidenceSummary}
-                  </div>
+                  <strong>Policy:</strong> {activeCase.whyFlagged.policyName} ({activeCase.whyFlagged.policyVersion}, effective {activeCase.whyFlagged.policyEffectiveDate})
                 </div>
-
                 <div>
-                  <span className="text-slate-400">Source Repository:</span>
-                  <div className="font-mono text-slate-800 mt-0.5">
-                    {selectedCase.detailedWhy.foundEvidenceSource}
-                  </div>
+                  <strong>Clause:</strong> {activeCase.whyFlagged.clause}
                 </div>
-
-                <div>
-                  <span className="text-slate-400">Expiration Comparison:</span>
-                  <div className="font-bold text-rose-700 mt-0.5">
-                    {selectedCase.detailedWhy.expiryComparison}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Confidence vs Legal Validity Notice */}
-            <div className="space-y-1.5 text-xs">
-              <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">
-                Calibrated Confidence & Uncertainty Disclosure
-              </span>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-[11px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-600">AI Document Classification Confidence:</span>
-                  <span className="font-mono font-bold text-teal-800 text-xs">
-                    {selectedCase.detailedWhy.agentConfidence}%
-                  </span>
-                </div>
-                <p className="text-slate-500 text-[10px] leading-relaxed">
-                  {selectedCase.detailedWhy.uncertaintyNote}
+                <p className="text-slate-600 italic bg-white p-2.5 rounded border border-slate-200">
+                  “{activeCase.whyFlagged.clauseText}”
                 </p>
-                <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[10px]">
-                  <strong>Human Gate Standard:</strong> High AI confidence does not replace human authorization. Compliance closure requires HR Operations verification.
-                </div>
-              </div>
-            </div>
-
-            {/* Action Recommendations */}
-            <div className="pt-2">
-              <button
-                onClick={() => {
-                  setIsWhyDrawerOpen(false);
-                  if (isOpenRed) setIsOutreachModalOpen(true);
-                }}
-                className="w-full py-2.5 rounded-lg bg-teal-700 text-white font-bold text-xs hover:bg-teal-800 shadow-xs flex items-center justify-center gap-2"
-              >
-                <span>Proceed to Remediation Outreach</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: PREPARE & DISPATCH REMEDIATION OUTREACH (Gate 2) */}
-      {/* ========================================================================= */}
-      {isOutreachModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 text-left space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-teal-700" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  Review & Approve AI-Drafted Employee Outreach (Gate 2)
-                </h3>
-              </div>
-              <button 
-                onClick={() => setIsOutreachModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600">
-              The Remediation Agent drafted this request using policy parameters. HR Operations must approve or edit the text before sending to <strong>{selectedEmployee.name}</strong>.
-            </p>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Subject</label>
-                <input 
-                  type="text"
-                  value={customSubject}
-                  onChange={(e) => setCustomSubject(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:bg-white focus:outline-none"
-                />
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Message Body</label>
-                <textarea 
-                  rows={6}
-                  value={customBody}
-                  onChange={(e) => setCustomBody(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-[11px] text-slate-600">
-                <span>Dispatch Channel: <strong>Secure Employee Portal</strong></span>
-                <span className="text-teal-700 font-semibold">Simulated Delivery Link</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setIsOutreachModalOpen(false)}
-                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={() => {
-                  approveAndSendRemediation(selectedCase.id, customSubject, customBody);
-                  setIsOutreachModalOpen(false);
-                }}
-                className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Approve & Dispatch Outreach</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: SIMULATED EMPLOYEE PORTAL (Daniel Kim uploads renewed certificate) */}
-      {/* ========================================================================= */}
-      {isEmployeePortalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 text-left space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                  BV
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-semibold text-slate-900">Inspected Source &amp; Freshness</div>
+                <div>
+                  <strong>Source:</strong> <span className="font-mono text-[11px]">{activeCase.whyFlagged.inspectedSource}</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">
-                    BioVanguard Employee Self-Service Portal
-                  </h3>
-                  <div className="text-[10px] text-slate-500 font-mono">
-                    Logged in as: Daniel Kim (EMP-10419)
-                  </div>
+                  <strong>As-of Timestamp:</strong> {activeCase.whyFlagged.sourceAsOfTimestamp}
+                </div>
+                <div>
+                  <strong>Finding:</strong> {activeCase.whyFlagged.foundEvidenceSummary}
+                </div>
+                <div>
+                  <strong>Repositories Searched:</strong> {activeCase.repositoriesSearched.join(', ')}
                 </div>
               </div>
-              <button 
-                onClick={() => setIsEmployeePortalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
-              <div className="font-bold">Compliance Action Required:</div>
-              <p className="text-[11px] text-amber-800">
-                Please upload your renewed California State Board of Pharmacy license certificate to maintain clinical research authorization.
-              </p>
-            </div>
-
-            {/* Document Upload Control */}
-            <div className="border-2 border-dashed border-teal-300 bg-teal-50/30 rounded-xl p-5 text-center space-y-2">
-              <Upload className="w-7 h-7 text-teal-600 mx-auto" />
-              <div className="text-xs font-bold text-slate-800">
-                {simulatedFileName}
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-1.5">
+                <div className="font-semibold text-amber-950">
+                  Extraction Confidence ({activeCase.whyFlagged.extractionConfidence}%) — Honest Disclaimer
+                </div>
+                <p className="text-amber-900">{activeCase.whyFlagged.confidenceDisclaimer}</p>
+                <p className="text-amber-900">
+                  <strong>Why PSV Required:</strong> {activeCase.whyFlagged.whyAuthoritativeVerificationRequired}
+                </p>
               </div>
-              <div className="text-[10px] text-slate-500">
-                {simulatedFileSize} · Detected License #RPH-84920 · Valid: 2028-09-15
-              </div>
-              <div className="pt-2">
-                <button
-                  onClick={() => {
-                    simulateEmployeeUpload(selectedCase.id, {
-                      fileName: simulatedFileName,
-                      fileSize: simulatedFileSize,
-                      licenseNumber: 'RPH-84920',
-                      expirationDate: '2028-09-15'
-                    });
-                    setIsEmployeePortalOpen(false);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs shadow-xs"
-                >
-                  Submit Renewed California License &rarr;
-                </button>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-slate-400 text-center">
-              Simulated Employee Portal Link · Secured with Enterprise SAML SSO
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL: HUMAN HR REVIEW & CLOSURE (Gate 3) */}
-      {/* ========================================================================= */}
-      {isReviewModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 text-left space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-bold text-sm text-slate-900">
-                  HR Evidence Verification & Case Sign-Off (Gate 3)
+      {/* SIMULATED MOBILE-FRIENDLY EMPLOYEE PORTAL MODAL */}
+      {isEmployeePortalOpen && activeCase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="fixed inset-0 bg-slate-900/60" onClick={() => setIsEmployeePortalOpen(false)} />
+          <div className="relative z-10 w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden text-xs">
+            <div className="px-5 py-4 bg-teal-800 text-white flex items-center justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-teal-200">
+                  Simulated Employee Self-Service Portal
+                </div>
+                <h3 className="text-sm font-semibold mt-0.5">
+                  {selectedWorker.name} · {activeCase.caseNumber}
                 </h3>
               </div>
-              <button 
-                onClick={() => setIsReviewModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-600"
+              <button
+                onClick={() => setIsEmployeePortalOpen(false)}
+                className="p-1 text-teal-100 hover:text-white"
+                aria-label="Close employee portal"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-600">
-              Daniel Kim has submitted replacement evidence. Review the document parameters before confirming closure:
-            </p>
+            <div className="p-5 space-y-4">
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-slate-700">
+                <strong>Requested Item:</strong> {activeCase.title}
+              </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Submitted File:</span>
-                <span className="font-mono font-bold text-slate-800">{simulatedFileName}</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPortalMode('sample_doc')}
+                  className={`p-2 rounded-lg border text-left font-medium ${
+                    portalMode === 'sample_doc' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                  }`}
+                >
+                  1-Click Sample Doc
+                </button>
+                <button
+                  onClick={() => setPortalMode('file')}
+                  className={`p-2 rounded-lg border text-left font-medium ${
+                    portalMode === 'file' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                  }`}
+                >
+                  Upload Real File
+                </button>
+                <button
+                  onClick={() => setPortalMode('reply_question')}
+                  className={`p-2 rounded-lg border text-left font-medium ${
+                    portalMode === 'reply_question' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                  }`}
+                >
+                  Reply With Question
+                </button>
+                <button
+                  onClick={() => setPortalMode('already_submitted_workday')}
+                  className={`p-2 rounded-lg border text-left font-medium ${
+                    portalMode === 'already_submitted_workday' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                  }`}
+                >
+                  Submitted in Workday
+                </button>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Detected License #:</span>
-                <span className="font-mono font-bold text-slate-800">RPH-84920</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">New Expiration Date:</span>
-                <span className="font-mono font-bold text-emerald-700">2028-09-15 (Valid)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Policy Standard:</span>
-                <span className="font-semibold text-slate-800">Clinical Licensure Policy v3.8</span>
-              </div>
-            </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">HR Review Notes & Verification Source</label>
-              <textarea 
-                rows={3}
-                value={reviewNotes}
-                onChange={(e) => setReviewNotes(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-medium focus:bg-white focus:outline-none"
-              />
-            </div>
+              {portalMode === 'file' && (
+                <div className="space-y-2">
+                  <label className="block font-medium text-slate-700">
+                    Select PDF, JPG, PNG, or TXT file from your device
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.txt"
+                    onChange={(e) => setPortalFile(e.target.files?.[0] || null)}
+                    className="w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-teal-700 file:text-white file:font-semibold"
+                  />
+                  <div className="text-[10px] text-slate-500">
+                    Held in session memory only (not saved to localStorage). Uploading never marks a regulated license verified.
+                  </div>
+                </div>
+              )}
 
-            <div className="flex items-center justify-between pt-2">
+              {(portalMode === 'sample_doc' || portalMode === 'file') && (
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    Claimed Expiration Date (Requires Verification)
+                  </label>
+                  <input
+                    type="date"
+                    value={portalClaimedExp}
+                    onChange={(e) => setPortalClaimedExp(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">
+                  Note for HR / Credentialing
+                </label>
+                <textarea
+                  rows={2}
+                  value={portalNote}
+                  onChange={(e) => setPortalNote(e.target.value)}
+                  placeholder={
+                    portalMode === 'already_submitted_workday'
+                      ? 'I uploaded this in Workday on Tuesday...'
+                      : 'Optional note...'
+                  }
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
+                />
+              </div>
+
               <button
                 onClick={() => {
-                  reviewEvidenceAndResolve(selectedCase.id, false, 'Document rejected - illegible expiration seal');
-                  setIsReviewModalOpen(false);
+                  submitEmployeePortalResponse(activeCase.id, {
+                    mode: portalMode,
+                    file: portalFile,
+                    expirationDate: portalClaimedExp,
+                    note: portalNote
+                  });
+                  setIsEmployeePortalOpen(false);
                 }}
-                className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-semibold hover:bg-rose-50"
+                className="w-full py-2.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold"
               >
-                Reject Evidence
+                Submit Response to HR Queue
               </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setIsReviewModalOpen(false)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    reviewEvidenceAndResolve(selectedCase.id, true, reviewNotes);
-                    setIsReviewModalOpen(false);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Confirm Verified & Mark Resolved (Green)</span>
-                </button>
+      {/* WORKDAY PAYLOAD & MIRROR MODAL */}
+      {isHRMSSyncPayloadModalOpen && activeCase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="fixed inset-0 bg-slate-900/60" onClick={() => setIsHRMSSyncPayloadModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden text-xs">
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Simulated Workday Staging Object Payload
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Target: Workday_Custom_Compliance_Staging__c (Master HR fields remain read-only)
+                </p>
               </div>
+              <button
+                onClick={() => setIsHRMSSyncPayloadModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600"
+                aria-label="Close payload inspector"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <pre className="p-3.5 rounded-xl bg-slate-900 text-slate-100 font-mono text-[11px] overflow-x-auto">
+{JSON.stringify(
+  {
+    targetObject: 'Workday_Custom_Compliance_Staging__c',
+    workerId: selectedWorker.employeeNumber,
+    caseNumber: activeCase.caseNumber,
+    credentialReadinessSummary:
+      readiness?.overallStatus === 'READY' ? 'READY' : 'PARTIAL_PENDING',
+    excludedFields: [
+      'Occupational_Health_Details__PHI',
+      'Medical_Staff_Clinical_Privileges',
+      'Workday_Payroll_Compensation'
+    ]
+  },
+  null,
+  2
+)}
+              </pre>
             </div>
           </div>
         </div>

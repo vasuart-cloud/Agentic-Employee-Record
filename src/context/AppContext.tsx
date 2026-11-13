@@ -1,144 +1,280 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
-import { 
-  UserRoleId,
-  UserPersona,
-  NavigationScreen, 
-  EnvironmentType, 
-  AutonomyLevel,
-  Organization,
-  PolicySource,
-  ComplianceRule,
-  RuleVersion,
-  EvalFixture,
-  EvalRun,
-  ComplianceCase,
-  RemediationTask,
-  MessageThread,
-  HRMSConnector,
-  FieldMapping,
-  SyncRun,
-  HRMSMirrorRecord,
-  AuditEvent,
-  BusinessValueAssumptions,
-  Employee,
-  AgentInfo, 
-  AgentTrace, 
-  EvalCase, 
-  WorkflowNodeData, 
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  ReactNode
+} from 'react';
+import {
+  AgentInfo,
+  AgentTrace,
   AgentVersion,
-  KillSwitchRecord 
+  AuditEvent,
+  AutonomyLevel,
+  ClinicalDutyEligibilityState,
+  CommunicationThread,
+  ComplianceCase,
+  Connector,
+  CredentialRequirement,
+  CredentialVerification,
+  CredentialVerificationState,
+  DemoScenarioId,
+  Department,
+  EmploymentAssignment,
+  EnvironmentType,
+  EvalCase,
+  EvidenceItem,
+  Facility,
+  FieldMapping,
+  HRMSMirrorRecord,
+  KillSwitchRecord,
+  NavigationScreen,
+  Organization,
+  PolicyDocument,
+  PolicyVersionRecord,
+  RemediationTask,
+  ROIModelAssumption,
+  RuleDefinition,
+  SyncTransaction,
+  TestFixture,
+  TestRun,
+  UserPersona,
+  UserRoleId,
+  Worker,
+  WorkflowNodeData
 } from '../types';
-import { 
-  USER_PERSONAS,
+import {
+  ADMIN_AGENTS,
+  AGENT_VERSIONS,
+  EVAL_CASES,
+  HERO_AGENT_TRACE,
+  INITIAL_ASSIGNMENTS,
+  INITIAL_AUDIT_EVENTS,
+  INITIAL_COMMUNICATION_THREADS,
+  INITIAL_COMPLIANCE_CASES,
+  INITIAL_CONNECTORS,
+  INITIAL_DEPARTMENTS,
+  INITIAL_EVAL_FIXTURES,
+  INITIAL_EVIDENCE_ITEMS,
+  INITIAL_FACILITIES,
+  INITIAL_FIELD_MAPPINGS,
+  INITIAL_HRMS_MIRROR,
   INITIAL_ORGANIZATION,
   INITIAL_POLICIES,
-  INITIAL_RULES,
-  INITIAL_RULE_VERSIONS,
-  INITIAL_EVAL_FIXTURES,
-  INITIAL_EVAL_RUN,
-  MOCK_EMPLOYEES,
-  INITIAL_COMPLIANCE_CASES,
+  INITIAL_POLICY_VERSIONS,
   INITIAL_REMEDIATION_TASKS,
-  INITIAL_MESSAGE_THREADS,
-  INITIAL_CONNECTORS,
-  INITIAL_FIELD_MAPPINGS,
-  INITIAL_SYNC_RUNS,
-  INITIAL_HRMS_MIRROR,
-  INITIAL_AUDIT_LOGS,
-  INITIAL_ASSUMPTIONS,
-  ADMIN_AGENTS, 
-  HERO_AGENT_TRACE, 
-  RECENT_TRACES, 
-  EVAL_CASES, 
-  WORKFLOW_NODES, 
-  AGENT_VERSIONS
+  INITIAL_REQUIREMENTS,
+  INITIAL_ROI_ASSUMPTIONS,
+  INITIAL_RULES,
+  INITIAL_SYNC_TRANSACTIONS,
+  INITIAL_VERIFICATIONS,
+  INITIAL_WORKERS,
+  RECENT_TRACES,
+  USER_PERSONAS,
+  WORKFLOW_NODES
 } from '../data/mockData';
+import { canPerformAction, PermissionAction } from '../domain/authorization';
+import {
+  buildRequirementsForWorkerAssignments,
+  computeRuleSnapshotHash,
+  DEMO_REFERENCE_DATE,
+  runRuleEvaluation
+} from '../domain/rules';
+import { computeWorkerReadiness, WorkerReadinessSummary } from '../domain/readiness';
+import {
+  applyEmployeeSubmissionToCase,
+  applyPrimarySourceVerificationResult,
+  validateCaseClosure
+} from '../domain/workflows';
+import {
+  applyAcknowledgedTxToMirror,
+  mockWorkdayAdapter
+} from '../integrations/MockWorkdayAdapter';
 
-const LOCAL_STORAGE_KEY = 'agentic_records_state_v2';
+const LOCAL_STORAGE_KEY = 'agentic_records_healthcare_demo_v3';
+
+export interface ToastNotice {
+  id: string;
+  message: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+}
+
+export interface UploadedFilePreview {
+  evidenceId: string;
+  objectUrl: string;
+  fileName: string;
+  mimeType: string;
+}
+
+export interface EmployeePortalSubmitPayload {
+  mode: 'file' | 'sample_doc' | 'reply_question' | 'already_submitted_workday';
+  file?: File | null;
+  fileName?: string;
+  fileSize?: string;
+  mimeType?: string;
+  licenseNumber?: string;
+  expirationDate?: string;
+  note: string;
+}
 
 interface AppContextType {
   // Active Persona & Navigation
   activeRoleId: UserRoleId;
   currentPersona: UserPersona;
-  switchRole: (roleId: UserRoleId) => void;
+  switchRole: (roleId: UserRoleId, targetScreen?: NavigationScreen) => void;
+  can: (
+    action: PermissionAction,
+    context?: Parameters<typeof canPerformAction>[2]
+  ) => ReturnType<typeof canPerformAction>;
   currentScreen: NavigationScreen;
   setCurrentScreen: (screen: NavigationScreen) => void;
   currentEnvironment: EnvironmentType;
   setCurrentEnvironment: (env: EnvironmentType) => void;
   isWelcomeModalOpen: boolean;
   setIsWelcomeModalOpen: (open: boolean) => void;
+  isDemoGuideOpen: boolean;
+  setIsDemoGuideOpen: (open: boolean) => void;
+  isMobileSidebarOpen: boolean;
+  setIsMobileSidebarOpen: (open: boolean) => void;
+  activeScenarioId: DemoScenarioId | null;
+  launchDemoScenario: (scenarioId: DemoScenarioId) => void;
 
-  // Organization & Policies
+  // Notifications
+  toasts: ToastNotice[];
+  notify: (message: string, tone?: ToastNotice['tone']) => void;
+  dismissToast: (id: string) => void;
+
+  // Organization & Reference
   organization: Organization;
   updateOrganization: (org: Partial<Organization>) => void;
-  policies: PolicySource[];
-  addPolicy: (policy: PolicySource) => void;
+  facilities: Facility[];
+  departments: Department[];
 
-  // Rules & Test Lab
-  rules: ComplianceRule[];
-  ruleVersions: RuleVersion[];
-  evalFixtures: EvalFixture[];
-  evalRuns: EvalRun[];
-  updateRule: (rule: ComplianceRule) => void;
-  runRuleEvalSandbox: (ruleId: string) => Promise<EvalRun>;
-  publishRuleVersion: (ruleId: string, version: string, secondApproverName: string) => void;
+  // Workforce & Readiness
+  workers: Worker[];
+  assignments: EmploymentAssignment[];
+  workerReadinessMap: Record<string, WorkerReadinessSummary>;
+  selectedWorkerId: string;
+  setSelectedWorkerId: (id: string) => void;
+  selectedWorker: Worker;
+  openWorkerDossier: (workerId: string, caseId?: string) => void;
+
+  // Policies, Rules & Executable Test Lab
+  policies: PolicyDocument[];
+  addPolicyDocument: (policy: PolicyDocument) => void;
+  rules: RuleDefinition[];
+  policyVersions: PolicyVersionRecord[];
+  testFixtures: TestFixture[];
+  testRuns: TestRun[];
+  updateDraftRule: (rule: RuleDefinition) => void;
+  runDraftRuleTestLab: (ruleId: string) => TestRun | null;
+  submitRuleForApproval: (ruleId: string) => { ok: boolean; message: string };
+  approveAndPublishRule: (ruleId: string, notes: string) => { ok: boolean; message: string };
   rollbackRuleVersion: (ruleId: string, targetVersion: string) => void;
 
-  // Operational Employees & Cases
-  employees: Employee[];
-  selectedEmployeeId: string;
-  setSelectedEmployeeId: (id: string) => void;
-  selectedEmployee: Employee;
-  complianceCases: ComplianceCase[];
+  // Requirements, Evidence, PSV & Cases
+  requirements: CredentialRequirement[];
+  evidenceItems: EvidenceItem[];
+  verifications: CredentialVerification[];
+  cases: ComplianceCase[];
   selectedCaseId: string;
   setSelectedCaseId: (id: string) => void;
   selectedCase: ComplianceCase;
-  remediationTasks: RemediationTask[];
-  messageThreads: MessageThread[];
+  tasks: RemediationTask[];
+  threads: CommunicationThread[];
+  uploadedFilePreviews: Record<string, UploadedFilePreview>;
 
-  // Hero Story Actions
-  approveAndSendRemediation: (caseId: string, customSubject?: string, customBody?: string) => void;
-  simulateEmployeeUpload: (caseId: string, details: { fileName: string; fileSize: string; licenseNumber?: string; expirationDate?: string }) => void;
-  reviewEvidenceAndResolve: (caseId: string, approved: boolean, notes: string) => void;
-  triggerHRMSWriteback: (caseId: string, simulateFailure?: boolean) => Promise<boolean>;
-  retryFailedSync: (syncRunId: string) => void;
+  // Core Interactive Workflows
+  approveAndSendOutreach: (
+    caseId: string,
+    subject: string,
+    body: string,
+    channel?: 'Simulated Demo Portal' | 'Workday Inbox Check'
+  ) => { ok: boolean; message: string };
+  submitEmployeePortalResponse: (
+    caseId: string,
+    payload: EmployeePortalSubmitPayload
+  ) => { ok: boolean; message: string };
+  runPrimarySourceVerification: (
+    caseId: string,
+    fixtureOutcome: 'VERIFIED_ACTIVE' | 'RESTRICTED' | 'VERIFICATION_FAILED' | 'UNVERIFIED'
+  ) => { ok: boolean; message: string };
+  recordClinicalEligibilityDecision: (
+    caseId: string,
+    decision: ClinicalDutyEligibilityState,
+    notes: string
+  ) => { ok: boolean; message: string };
+  reviewAndCloseCase: (
+    caseId: string,
+    approved: boolean,
+    notes: string
+  ) => { ok: boolean; message: string };
+  completeNonPSVRequirement: (
+    caseId: string,
+    notes: string
+  ) => { ok: boolean; message: string };
 
-  // Modals & Inspection UI
+  // Workday Staging Adapter
+  connectors: Connector[];
+  fieldMappings: FieldMapping[];
+  syncTransactions: SyncTransaction[];
+  hrmsMirror: Record<string, HRMSMirrorRecord>;
+  queueAndSyncWorkdayStaging: (
+    caseId: string,
+    simulateTimeout504?: boolean
+  ) => Promise<SyncTransaction | null>;
+  retrySyncTransaction: (
+    txId: string,
+    simulateTimeout504?: boolean
+  ) => Promise<SyncTransaction | null>;
+  simulateWorkdayWorkerEvent: (
+    type: 'NEW_HIRE' | 'ROLE_TRANSFER',
+    workerId?: string
+  ) => { ok: boolean; message: string };
+  runConnectorSync: (connectorId: string) => Promise<void>;
+  updateConnectorStatus: (connectorId: string, status: Connector['status']) => void;
+
+  // Modals & Interactive Portal
   isEmployeePortalOpen: boolean;
   setIsEmployeePortalOpen: (open: boolean) => void;
   isHRMSSyncPayloadModalOpen: boolean;
   setIsHRMSSyncPayloadModalOpen: (open: boolean) => void;
 
-  // Connectors & HRMS Sync
-  connectors: HRMSConnector[];
-  fieldMappings: FieldMapping[];
-  syncRuns: SyncRun[];
-  hrmsMirror: Record<string, HRMSMirrorRecord>;
-  runConnectorSync: (connectorId: string, direction?: string) => Promise<void>;
-  updateConnectorStatus: (connectorId: string, status: HRMSConnector['status']) => void;
-
-  // Audit Ledger
+  // Audit & ROI
   auditEvents: AuditEvent[];
-  logAuditEvent: (event: Omit<AuditEvent, 'id' | 'timestamp' | 'hashSha256'>) => void;
+  logAuditEvent: (
+    event: Omit<AuditEvent, 'eventId' | 'timestamp' | 'isSimulatedDemoEvent' | 'integrityLabel'>
+  ) => void;
+  roiAssumptions: ROIModelAssumption;
+  updateRoiAssumptions: (next: Partial<ROIModelAssumption>) => void;
 
-  // Business Value Assumptions & Computed Metrics
-  assumptions: BusinessValueAssumptions;
-  updateAssumptions: (newAssumptions: Partial<BusinessValueAssumptions>) => void;
+  // Computed Metrics (Sample-scoped + Honest Labels)
   computedMetrics: {
-    totalMonitored: number;
+    sampleWorkersCount: number;
+    enterpriseHeadcountContext: number;
+    totalApplicableRequirements: number;
     openCasesCount: number;
     criticalCasesCount: number;
-    overdueCount: number;
+    clinicalEscalationsPending: number;
     awaitingEmployeeCount: number;
+    pendingPSVCount: number;
     needsReviewCount: number;
-    verifiedCompleteCount: number;
-    northStarAuditReadyPercent: number;
-    totalMinutesSaved: number;
-    estimatedLaborValueSaved: number;
-    annualizedNetROI: number;
+    syncFailedCount: number;
+    readyWorkersCount: number;
+    sampleReadinessPercent: number;
+    resolvedCasesCount: number;
+    modeledMonthlyHoursSaved: number;
+    modeledAnnualCapacityValue: number;
+    modeledAnnualCashRealizable: number;
+    modeledAnnualNetValue: number;
   };
 
-  // Agents & Guardrails (Admin)
+  // Global Reset
+  resetDemoData: () => void;
+
+  // Admin AI Governance Compatibility
   agents: AgentInfo[];
   selectedAgentId: string;
   setSelectedAgentId: (id: string) => void;
@@ -150,8 +286,6 @@ interface AppContextType {
   setIsKillSwitchModalOpen: (open: boolean) => void;
   triggerKillSwitch: (reason: string) => void;
   resumeAgentFromKillSwitch: () => void;
-
-  // Traces & Evals
   traces: AgentTrace[];
   selectedTrace: AgentTrace | null;
   setSelectedTrace: (trace: AgentTrace | null) => void;
@@ -168,10 +302,6 @@ interface AppContextType {
   isWorkflowDrawerOpen: boolean;
   setIsWorkflowDrawerOpen: (open: boolean) => void;
   versions: AgentVersion[];
-  // Global Reset
-  resetDemoData: () => void;
-
-  // Compatibility fields for advanced admin controls & demo
   dataSources: {
     workday: boolean;
     sharepoint: boolean;
@@ -180,7 +310,7 @@ interface AppContextType {
     email: boolean;
     externalWeb: boolean;
   };
-  toggleDataSource: (key: any) => void;
+  toggleDataSource: (key: keyof AppContextType['dataSources']) => void;
   isRollbackModalOpen: boolean;
   setIsRollbackModalOpen: (open: boolean) => void;
   rollbackToVersion: (version: string) => void;
@@ -189,69 +319,169 @@ interface AppContextType {
   isSandboxRunning: boolean;
   sandboxTestResult: 'idle' | 'running' | 'completed';
   runSandboxTest: () => void;
-  demoStep: number;
-  jumpToDemoStep: (stepNumber: number) => void;
-  resetDemoState: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+function getDefaultScreenForRole(roleId: UserRoleId): NavigationScreen {
+  switch (roleId) {
+    case 'admin_priya':
+      return 'rule_test_lab';
+    case 'chro_david':
+      return 'executive_overview';
+    case 'cred_alex':
+      return 'credential_verification';
+    case 'hr_ops_maya':
+    default:
+      return 'weekly_overview';
+  }
+}
+
+function nowTimestampUtc(): string {
+  return new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Load initial state from LocalStorage or Seeds
-  const [activeRoleId, setActiveRoleId] = useState<UserRoleId>(() => {
+  const loadSaved = () => {
     try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.activeRoleId) return parsed.activeRoleId;
-      }
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
     } catch (e) {
-      console.warn('Failed reading activeRoleId from storage', e);
+      console.warn('Unable to parse saved demo state', e);
     }
-    return 'hr_ops_maya';
+    return null;
+  };
+  const saved = useMemo(() => loadSaved(), []);
+
+  const [activeRoleId, setActiveRoleId] = useState<UserRoleId>(
+    saved?.activeRoleId || 'hr_ops_maya'
+  );
+  const [currentScreen, setCurrentScreen] = useState<NavigationScreen>(
+    saved?.currentScreen || 'weekly_overview'
+  );
+  const [currentEnvironment, setCurrentEnvironment] = useState<EnvironmentType>(
+    'Demo Sandbox (Simulated)'
+  );
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [isDemoGuideOpen, setIsDemoGuideOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [activeScenarioId, setActiveScenarioId] = useState<DemoScenarioId | null>(null);
+
+  // Toasts
+  const [toasts, setToasts] = useState<ToastNotice[]>([]);
+  const notify = (message: string, tone: ToastNotice['tone'] = 'info') => {
+    const id = `TOAST-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setToasts((prev) => [...prev.slice(-3), { id, message, tone }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5200);
+  };
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Ephemeral file previews (never serialized to localStorage)
+  const [uploadedFilePreviews, setUploadedFilePreviews] = useState<
+    Record<string, UploadedFilePreview>
+  >({});
+  const previewsRef = useRef<Record<string, UploadedFilePreview>>({});
+  previewsRef.current = uploadedFilePreviews;
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewsRef.current).forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.objectUrl);
+        } catch {
+          // ignore
+        }
+      });
+    };
+  }, []);
+
+  // Core normalized entities
+  const [organization, setOrganization] = useState<Organization>(
+    saved?.organization || INITIAL_ORGANIZATION
+  );
+  const [facilities] = useState<Facility[]>(INITIAL_FACILITIES);
+  const [departments] = useState<Department[]>(INITIAL_DEPARTMENTS);
+  const [workers, setWorkers] = useState<Worker[]>(saved?.workers || INITIAL_WORKERS);
+  const [assignments, setAssignments] = useState<EmploymentAssignment[]>(
+    saved?.assignments || INITIAL_ASSIGNMENTS
+  );
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string>(
+    saved?.selectedWorkerId || 'EMP-10419'
+  );
+
+  const [policies, setPolicies] = useState<PolicyDocument[]>(saved?.policies || INITIAL_POLICIES);
+  const [rules, setRules] = useState<RuleDefinition[]>(saved?.rules || INITIAL_RULES);
+  const [policyVersions, setPolicyVersions] = useState<PolicyVersionRecord[]>(
+    saved?.policyVersions || INITIAL_POLICY_VERSIONS
+  );
+  const [testFixtures] = useState<TestFixture[]>(INITIAL_EVAL_FIXTURES);
+
+  // Seed initial test run dynamically against the draft rule so Test Lab immediately reflects real failure on FIX-05
+  const [testRuns, setTestRuns] = useState<TestRun[]>(() => {
+    if (saved?.testRuns?.length) return saved.testRuns;
+    const draftRule = INITIAL_RULES.find((r) => r.id === 'RULE-CA-PHARM-DRAFT');
+    return draftRule ? [runRuleEvaluation(draftRule, INITIAL_EVAL_FIXTURES, DEMO_REFERENCE_DATE)] : [];
   });
 
-  const [currentScreen, setCurrentScreen] = useState<NavigationScreen>('weekly_overview');
-  const [currentEnvironment, setCurrentEnvironment] = useState<EnvironmentType>('Production');
-  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [requirements, setRequirements] = useState<CredentialRequirement[]>(
+    saved?.requirements || INITIAL_REQUIREMENTS
+  );
+  const [evidenceItems, setEvidenceItems] = useState<EvidenceItem[]>(
+    saved?.evidenceItems || INITIAL_EVIDENCE_ITEMS
+  );
+  const [verifications, setVerifications] = useState<CredentialVerification[]>(
+    saved?.verifications || INITIAL_VERIFICATIONS
+  );
+  const [cases, setCases] = useState<ComplianceCase[]>(
+    saved?.cases || INITIAL_COMPLIANCE_CASES
+  );
+  const [selectedCaseId, setSelectedCaseId] = useState<string>(
+    saved?.selectedCaseId || 'CASE-9021'
+  );
+  const [tasks, setTasks] = useState<RemediationTask[]>(
+    saved?.tasks || INITIAL_REMEDIATION_TASKS
+  );
+  const [threads, setThreads] = useState<CommunicationThread[]>(
+    saved?.threads || INITIAL_COMMUNICATION_THREADS
+  );
 
-  // Entities state
-  const [organization, setOrganization] = useState<Organization>(INITIAL_ORGANIZATION);
-  const [policies, setPolicies] = useState<PolicySource[]>(INITIAL_POLICIES);
-  const [rules, setRules] = useState<ComplianceRule[]>(INITIAL_RULES);
-  const [ruleVersions, setRuleVersions] = useState<RuleVersion[]>(INITIAL_RULE_VERSIONS);
-  const [evalFixtures, setEvalFixtures] = useState<EvalFixture[]>(INITIAL_EVAL_FIXTURES);
-  const [evalRuns, setEvalRuns] = useState<EvalRun[]>([INITIAL_EVAL_RUN]);
+  const [connectors, setConnectors] = useState<Connector[]>(
+    saved?.connectors || INITIAL_CONNECTORS
+  );
+  const [fieldMappings] = useState<FieldMapping[]>(INITIAL_FIELD_MAPPINGS);
+  const [syncTransactions, setSyncTransactions] = useState<SyncTransaction[]>(
+    saved?.syncTransactions || INITIAL_SYNC_TRANSACTIONS
+  );
+  const [hrmsMirror, setHrmsMirror] = useState<Record<string, HRMSMirrorRecord>>(
+    saved?.hrmsMirror || INITIAL_HRMS_MIRROR
+  );
 
-  const [employees, setEmployees] = useState<Employee[]>(MOCK_EMPLOYEES);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('EMP-10419'); // Daniel Kim by default
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(
+    saved?.auditEvents || INITIAL_AUDIT_EVENTS
+  );
+  const [roiAssumptions, setRoiAssumptions] = useState<ROIModelAssumption>(
+    saved?.roiAssumptions || INITIAL_ROI_ASSUMPTIONS
+  );
 
-  const [complianceCases, setComplianceCases] = useState<ComplianceCase[]>(INITIAL_COMPLIANCE_CASES);
-  const [selectedCaseId, setSelectedCaseId] = useState<string>('CASE-9021'); // Hero case Daniel Kim
-  const [remediationTasks, setRemediationTasks] = useState<RemediationTask[]>(INITIAL_REMEDIATION_TASKS);
-  const [messageThreads, setMessageThreads] = useState<MessageThread[]>(INITIAL_MESSAGE_THREADS);
+  // Interactive modals
+  const [isEmployeePortalOpen, setIsEmployeePortalOpen] = useState(false);
+  const [isHRMSSyncPayloadModalOpen, setIsHRMSSyncPayloadModalOpen] = useState(false);
 
-  const [connectors, setConnectors] = useState<HRMSConnector[]>(INITIAL_CONNECTORS);
-  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>(INITIAL_FIELD_MAPPINGS);
-  const [syncRuns, setSyncRuns] = useState<SyncRun[]>(INITIAL_SYNC_RUNS);
-  const [hrmsMirror, setHrmsMirror] = useState<Record<string, HRMSMirrorRecord>>(INITIAL_HRMS_MIRROR);
-
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(INITIAL_AUDIT_LOGS);
-  const [assumptions, setAssumptions] = useState<BusinessValueAssumptions>(INITIAL_ASSUMPTIONS);
-
-  // Admin agents & kill switch
+  // Admin AI Governance state
   const [agents, setAgents] = useState<AgentInfo[]>(ADMIN_AGENTS);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('compliance-agent');
   const [complianceAgentAutonomy, setComplianceAgentAutonomy] = useState<AutonomyLevel>(2);
-  const [killSwitchState, setKillSwitchState] = useState<KillSwitchRecord>({ isTriggered: false });
+  const [killSwitchState, setKillSwitchState] = useState<KillSwitchRecord>(
+    saved?.killSwitchState || { isTriggered: false }
+  );
   const [isKillSwitchModalOpen, setIsKillSwitchModalOpen] = useState(false);
-
-  // Observability & traces
   const [traces] = useState<AgentTrace[]>(RECENT_TRACES);
   const [selectedTrace, setSelectedTrace] = useState<AgentTrace | null>(HERO_AGENT_TRACE);
   const [isTraceModalOpen, setIsTraceModalOpen] = useState(false);
-
-  // Evals & Workflows
   const [evalCases] = useState<EvalCase[]>(EVAL_CASES);
   const [selectedEvalCase, setSelectedEvalCase] = useState<EvalCase | null>(null);
   const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
@@ -259,12 +489,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedWorkflowNode, setSelectedWorkflowNode] = useState<WorkflowNodeData | null>(null);
   const [isWorkflowDrawerOpen, setIsWorkflowDrawerOpen] = useState(false);
   const [versions] = useState<AgentVersion[]>(AGENT_VERSIONS);
-
-  // Interactive Hero UI Modals
-  const [isEmployeePortalOpen, setIsEmployeePortalOpen] = useState(false);
-  const [isHRMSSyncPayloadModalOpen, setIsHRMSSyncPayloadModalOpen] = useState(false);
-
-  // Advanced Admin Controls Compatibility
   const [dataSources, setDataSources] = useState({
     workday: true,
     sharepoint: true,
@@ -273,847 +497,2039 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     email: false,
     externalWeb: false
   });
-  const toggleDataSource = (key: any) => {
-    setDataSources(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }));
+  const toggleDataSource = (key: keyof AppContextType['dataSources']) => {
+    setDataSources((prev) => ({ ...prev, [key]: !prev[key] }));
   };
-
   const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false);
-  const rollbackToVersion = (targetVersion: string) => {
-    rollbackRuleVersion('RULE-CA-PHARM-01', targetVersion);
-    setIsRollbackModalOpen(false);
-  };
-
-  const [releaseGateApproved, setReleaseGateApproved] = useState(true);
+  const [releaseGateApproved, setReleaseGateApproved] = useState(false);
   const [isSandboxRunning, setIsSandboxRunning] = useState(false);
-  const [sandboxTestResult, setSandboxTestResult] = useState<'idle' | 'running' | 'completed'>('completed');
-  const runSandboxTest = () => {
-    setIsSandboxRunning(true);
-    setSandboxTestResult('running');
-    setTimeout(() => {
-      setIsSandboxRunning(false);
-      setSandboxTestResult('completed');
-    }, 1200);
-  };
+  const [sandboxTestResult, setSandboxTestResult] = useState<'idle' | 'running' | 'completed'>(
+    'completed'
+  );
 
-  const [demoStep, setDemoStep] = useState(1);
-  const jumpToDemoStep = (stepNumber: number) => {
-    setDemoStep(stepNumber);
-  };
-  const resetDemoState = () => {
-    resetDemoData();
-  };
-
-  // Save to localStorage when critical state changes
+  // Persist sanitized demo state to localStorage (never raw file bytes)
   useEffect(() => {
     try {
-      const stateToSave = {
+      const payload = {
         activeRoleId,
         currentScreen,
-        complianceCases,
-        employees,
-        hrmsMirror,
+        organization,
+        workers,
+        assignments,
+        selectedWorkerId,
+        policies,
         rules,
-        ruleVersions,
-        evalRuns,
+        policyVersions,
+        testRuns,
+        requirements,
+        evidenceItems,
+        verifications,
+        cases,
+        selectedCaseId,
+        tasks,
+        threads,
         connectors,
-        syncRuns,
+        syncTransactions,
+        hrmsMirror,
         auditEvents,
-        assumptions,
+        roiAssumptions,
         killSwitchState
       };
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {
-      console.warn('Failed to save state to localStorage', e);
+      console.warn('Failed saving state to localStorage', e);
     }
   }, [
-    activeRoleId, currentScreen, complianceCases, employees, hrmsMirror, 
-    rules, ruleVersions, evalRuns, connectors, syncRuns, auditEvents, 
-    assumptions, killSwitchState
+    activeRoleId,
+    currentScreen,
+    organization,
+    workers,
+    assignments,
+    selectedWorkerId,
+    policies,
+    rules,
+    policyVersions,
+    testRuns,
+    requirements,
+    evidenceItems,
+    verifications,
+    cases,
+    selectedCaseId,
+    tasks,
+    threads,
+    connectors,
+    syncTransactions,
+    hrmsMirror,
+    auditEvents,
+    roiAssumptions,
+    killSwitchState
   ]);
 
-  // Active persona
-  const currentPersona = USER_PERSONAS[activeRoleId] || USER_PERSONAS['hr_ops_maya'];
+  const currentPersona = USER_PERSONAS[activeRoleId] || USER_PERSONAS.hr_ops_maya;
 
-  // Switch role without losing progress
-  const switchRole = (roleId: UserRoleId) => {
-    setActiveRoleId(roleId);
-    if (roleId === 'admin_priya') {
-      setCurrentScreen('setup_checklist');
-    } else if (roleId === 'hr_ops_maya') {
-      setCurrentScreen('weekly_overview');
-    } else if (roleId === 'chro_david') {
-      setCurrentScreen('executive_overview');
-    }
+  const can = (
+    action: PermissionAction,
+    context?: Parameters<typeof canPerformAction>[2]
+  ) => {
+    return canPerformAction(activeRoleId, action, {
+      currentActorName: currentPersona.name,
+      ...context
+    });
   };
 
-  // Helper to log audit event
-  const logAuditEvent = (event: Omit<AuditEvent, 'id' | 'timestamp' | 'hashSha256'>) => {
-    const id = `AUDIT-${Date.now().toString().slice(-5)}`;
-    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-    const rawString = `${id}|${timestamp}|${event.actor}|${event.action}|${event.targetEntityId}`;
-    let hash = 0;
-    for (let i = 0; i < rawString.length; i++) {
-      hash = (hash << 5) - hash + rawString.charCodeAt(i);
-      hash |= 0;
-    }
-    const hashSha256 = Math.abs(hash).toString(16).padStart(64, 'a');
-
+  const logAuditEvent = (
+    event: Omit<AuditEvent, 'eventId' | 'timestamp' | 'isSimulatedDemoEvent' | 'integrityLabel'>
+  ) => {
     const newEvent: AuditEvent = {
-      id,
-      timestamp,
+      eventId: `EVT-${Date.now().toString().slice(-6)}`,
+      timestamp: nowTimestampUtc(),
       ...event,
-      hashSha256
+      isSimulatedDemoEvent: true,
+      integrityLabel: 'Demonstration Event History (browser-local, not tamper-proof)'
     };
-    setAuditEvents(prev => [newEvent, ...prev]);
+    setAuditEvents((prev) => [newEvent, ...prev]);
   };
 
-  // Selected Entities
-  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || employees[0];
-  const selectedCase = complianceCases.find(c => c.id === selectedCaseId) || complianceCases[0];
-  const selectedAgent = agents.find(a => a.id === selectedAgentId) || agents[1];
+  const switchRole = (roleId: UserRoleId, targetScreen?: NavigationScreen) => {
+    setActiveRoleId(roleId);
+    setCurrentScreen(targetScreen || getDefaultScreenForRole(roleId));
+    setIsMobileSidebarOpen(false);
+    const persona = USER_PERSONAS[roleId];
+    if (persona) {
+      notify(`Switched workspace view to ${persona.name} (${persona.roleLabel}).`, 'info');
+    }
+  };
 
-  // Organization update
+  const openWorkerDossier = (workerId: string, caseId?: string) => {
+    setSelectedWorkerId(workerId);
+    if (caseId) {
+      setSelectedCaseId(caseId);
+    } else {
+      const matchingCase = cases.find((c) => c.workerId === workerId && c.workflowState !== 'resolved')
+        || cases.find((c) => c.workerId === workerId);
+      if (matchingCase) setSelectedCaseId(matchingCase.id);
+    }
+    setCurrentScreen('employees');
+  };
+
+  // Memoized readiness per worker derived strictly from normalized requirements + cases
+  const workerReadinessMap = useMemo(() => {
+    const map: Record<string, WorkerReadinessSummary> = {};
+    for (const w of workers) {
+      map[w.id] = computeWorkerReadiness(w, requirements, cases, DEMO_REFERENCE_DATE);
+    }
+    return map;
+  }, [workers, requirements, cases]);
+
+  const selectedWorker = workers.find((w) => w.id === selectedWorkerId) || workers[0];
+  const selectedCase = cases.find((c) => c.id === selectedCaseId) || cases[0];
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
+
   const updateOrganization = (org: Partial<Organization>) => {
-    setOrganization(prev => ({ ...prev, ...org }));
+    setOrganization((prev) => ({ ...prev, ...org }));
     logAuditEvent({
       actor: currentPersona.name,
       actorRole: currentPersona.roleLabel,
       action: 'UPDATE_ORGANIZATION_SETTINGS',
-      category: 'SYSTEM',
-      targetEntityId: 'ORG-MAIN',
-      targetEntityType: 'Rule',
-      details: `Updated organization scope and legal entity configurations.`
+      category: 'POLICY',
+      source: 'Compliance Admin Settings',
+      targetEntityId: organization.id,
+      details: 'Updated organization demo configuration.'
     });
   };
 
-  // Add policy
-  const addPolicy = (policy: PolicySource) => {
-    setPolicies(prev => [policy, ...prev]);
+  const addPolicyDocument = (policy: PolicyDocument) => {
+    setPolicies((prev) => [policy, ...prev]);
     logAuditEvent({
       actor: currentPersona.name,
       actorRole: currentPersona.roleLabel,
-      action: 'REGISTER_POLICY_DOCUMENT',
+      action: 'ADD_POLICY_DOCUMENT',
       category: 'POLICY',
+      source: policy.extractionStatus,
       targetEntityId: policy.id,
-      targetEntityType: 'Rule',
-      details: `Registered policy document: ${policy.name} (${policy.version}).`
+      details: `Added policy document "${policy.name}" (${policy.version}) — ${policy.extractionStatus}.`
     });
+    notify(`Policy document "${policy.name}" added to Policy Library.`, 'success');
   };
 
-  // Update rule
-  const updateRule = (updatedRule: ComplianceRule) => {
-    setRules(prev => prev.map(r => r.id === updatedRule.id ? updatedRule : r));
-    logAuditEvent({
-      actor: currentPersona.name,
-      actorRole: currentPersona.roleLabel,
-      action: 'UPDATE_COMPLIANCE_RULE_DRAFT',
-      category: 'POLICY',
-      targetEntityId: updatedRule.id,
-      targetEntityType: 'Rule',
-      details: `Updated parameters for rule ${updatedRule.ruleCode} (${updatedRule.name}). Status: ${updatedRule.status}.`
-    });
-  };
-
-  // Run Rule Eval in Sandbox
-  const runRuleEvalSandbox = async (ruleId: string): Promise<EvalRun> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const runId = `EVAL-RUN-${Date.now().toString().slice(-6)}`;
-        const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-        
-        // Evaluate fixtures
-        const newRun: EvalRun = {
-          runId,
-          timestamp,
-          ruleVersion: 'v3.9-draft',
-          totalFixtures: 10,
-          passedFixtures: 10,
-          truePositives: 4,
-          falsePositives: 0,
-          trueNegatives: 6,
-          falseNegatives: 0,
-          precision: 100,
-          recall: 100,
-          accuracy: 100,
-          gatePassed: true
-        };
-
-        setEvalRuns(prev => [newRun, ...prev]);
-        setRules(prev => prev.map(r => r.id === ruleId ? { ...r, status: 'Tested' } : r));
-        
-        logAuditEvent({
-          actor: currentPersona.name,
-          actorRole: currentPersona.roleLabel,
-          action: 'EXECUTE_SANDBOX_EVAL',
-          category: 'POLICY',
-          targetEntityId: ruleId,
-          targetEntityType: 'Rule',
-          details: `Sandbox evaluation passed: 10/10 test fixtures passed (Precision 100%, Recall 100%). Gate cleared for dual-approval.`
-        });
-
-        resolve(newRun);
-      }, 750);
-    });
-  };
-
-  // Publish Rule Version with dual approver simulation
-  const publishRuleVersion = (ruleId: string, version: string, secondApproverName: string) => {
-    setRules(prev => prev.map(r => r.id === ruleId ? {
-      ...r,
-      version,
-      status: 'Published',
-      approvedBy: `${currentPersona.name} & ${secondApproverName}`,
-      approvedAt: new Date().toISOString()
-    } : r));
-
-    const newVersionRecord: RuleVersion = {
-      version,
-      ruleId,
-      ruleName: 'California Clinical Research Pharmacist Licensure',
-      author: currentPersona.name,
-      status: 'Published',
-      testPassRate: 100,
-      evalScore: '10/10 Passed (Dual Sign-Off)',
-      effectiveDate: new Date().toISOString().split('T')[0],
-      approvedBy: secondApproverName,
-      notes: `Published with dual sign-off from ${secondApproverName}.`,
-      diffSummary: `Published production rule ${version}.`
-    };
-
-    setRuleVersions(prev => [newVersionRecord, ...prev.map(v => v.status === 'Published' ? { ...v, status: 'Archived' as const } : v)]);
-
-    logAuditEvent({
-      actor: `${currentPersona.name} & ${secondApproverName}`,
-      actorRole: 'Compliance Admin & Legal/Medical Sign-off',
-      action: 'PUBLISH_COMPLIANCE_RULE',
-      category: 'POLICY',
-      targetEntityId: ruleId,
-      targetEntityType: 'Rule',
-      details: `Published Rule ${ruleId} version ${version} with dual-approver confirmation.`
-    });
-  };
-
-  // Rollback Rule Version
-  const rollbackRuleVersion = (ruleId: string, targetVersion: string) => {
-    setRules(prev => prev.map(r => r.id === ruleId ? { ...r, version: targetVersion } : r));
-    setRuleVersions(prev => prev.map(v => v.version === targetVersion ? { ...v, status: 'Published' } : { ...v, status: 'Archived' }));
-    logAuditEvent({
-      actor: currentPersona.name,
-      actorRole: currentPersona.roleLabel,
-      action: 'ROLLBACK_COMPLIANCE_RULE',
-      category: 'POLICY',
-      targetEntityId: ruleId,
-      targetEntityType: 'Rule',
-      details: `Rolled back rule ${ruleId} to version ${targetVersion}.`
-    });
-  };
-
-  // Run Connector Sync
-  const runConnectorSync = async (connectorId: string, direction = 'Inbound (HRMS -> Compliance)') => {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-        const targetConnector = connectors.find(c => c.id === connectorId);
-        const connectorName = targetConnector ? targetConnector.name : 'Workday HCM';
-
-        const runRecord: SyncRun = {
-          id: `SYNC-RUN-${Date.now().toString().slice(-4)}`,
-          connectorId,
-          connectorName,
-          direction: direction as any,
-          timestamp,
-          recordsFetched: 11420,
-          recordsCreated: 0,
-          recordsUpdated: 3,
-          recordsFailed: 0,
-          durationMs: 1240,
-          status: 'SUCCESS',
-          idempotencyKey: `IDEMP-SYNC-${Date.now()}`
-        };
-
-        setSyncRuns(prev => [runRecord, ...prev]);
-        setConnectors(prev => prev.map(c => c.id === connectorId ? {
-          ...c,
-          status: 'Connected',
-          lastSyncTimestamp: timestamp
-        } : c));
-
-        logAuditEvent({
-          actor: currentPersona.name,
-          actorRole: currentPersona.roleLabel,
-          action: 'RUN_INTEGRATION_SYNC',
-          category: 'HRMS_SYNC',
-          targetEntityId: connectorId,
-          targetEntityType: 'Connector',
-          details: `Simulated sync run completed successfully for ${connectorName}. 11,420 records evaluated.`
-        });
-
-        resolve();
-      }, 600);
-    });
-  };
-
-  const updateConnectorStatus = (connectorId: string, status: HRMSConnector['status']) => {
-    setConnectors(prev => prev.map(c => c.id === connectorId ? { ...c, status } : c));
-  };
-
-  // HERO ACTION 1: Approve and send remediation outreach (Gate 2)
-  const approveAndSendRemediation = (caseId: string, customSubject?: string, customBody?: string) => {
-    if (killSwitchState.isTriggered) {
-      alert('Action blocked: Emergency Kill Switch is currently active.');
+  const updateDraftRule = (updated: RuleDefinition) => {
+    const check = can('CREATE_DRAFT_RULE');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
       return;
     }
+    setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'UPDATE_DRAFT_RULE_PARAMETERS',
+      category: 'POLICY',
+      source: 'Rule Builder',
+      targetEntityId: updated.id,
+      details: `Modified rule ${updated.ruleCode} (${updated.version}). Re-test required before approval.`
+    });
+  };
 
-    const targetCase = complianceCases.find(c => c.id === caseId);
-    if (!targetCase) return;
+  const runDraftRuleTestLab = (ruleId: string): TestRun | null => {
+    const check = can('RUN_RULE_SANDBOX_EVAL');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return null;
+    }
+    const targetRule = rules.find((r) => r.id === ruleId);
+    if (!targetRule) return null;
 
-    const task = remediationTasks.find(t => t.caseId === caseId);
-    const subject = customSubject || (task ? task.draftedSubject : 'Action Required: Submit Verification');
-    const body = customBody || (task ? task.draftedBody : 'Please upload your renewed credential.');
+    const run = runRuleEvaluation(targetRule, testFixtures, DEMO_REFERENCE_DATE);
+    setTestRuns((prev) => [run, ...prev]);
 
-    // 1. Update Case Status -> AMBER_AWAITING_EMPLOYEE
-    setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-      ...c,
-      status: 'AMBER_AWAITING_EMPLOYEE',
-      slaStatus: 'Due Soon'
-    } : c));
-
-    // 2. Update Task Status -> APPROVED_SENT
-    setRemediationTasks(prev => prev.map(t => t.caseId === caseId ? {
-      ...t,
-      status: 'APPROVED_SENT',
-      dispatchedAt: new Date().toISOString()
-    } : t));
-
-    // 3. Append to Message Thread
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today';
-    setMessageThreads(prev => {
-      const existing = prev.find(th => th.caseId === caseId);
-      if (existing) {
-        return prev.map(th => th.caseId === caseId ? {
-          ...th,
-          messages: [
-            ...th.messages,
-            {
-              id: `MSG-${Date.now()}`,
-              sender: 'HR_OPERATIONS',
-              senderName: `${currentPersona.name} (HR Operations)`,
-              timestamp,
-              content: body
+    setRules((prev) =>
+      prev.map((r) =>
+        r.id === ruleId
+          ? {
+              ...r,
+              status: run.gatePassed ? 'Tested' : 'Draft'
             }
-          ]
-        } : th);
-      } else {
+          : r
+      )
+    );
+
+    setPolicyVersions((prev) =>
+      prev.map((pv) =>
+        pv.ruleId === ruleId && pv.version === targetRule.version
+          ? {
+              ...pv,
+              lastTestRunId: run.runId,
+              testSummary: `${run.passedCount}/${run.totalFixtures} fixtures passed · Gate ${
+                run.gatePassed ? 'CLEARED' : 'BLOCKED'
+              }`
+            }
+          : pv
+      )
+    );
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'RUN_SANDBOX_RULE_TEST_LAB',
+      category: 'POLICY',
+      source: 'Executable Rule Test Lab',
+      targetEntityId: ruleId,
+      beforeState: targetRule.status,
+      afterState: run.gatePassed ? 'Tested (Gate Cleared)' : 'Draft (Gate Blocked)',
+      details: `Executed ${run.totalFixtures} fixtures for ${targetRule.ruleCode}: ${run.passedCount}/${run.totalFixtures} passed.${
+        run.gatePassed ? '' : ` Block reasons: ${run.gateBlockReasons.join(' ')}`
+      }`
+    });
+
+    if (run.gatePassed) {
+      notify(
+        `Test Lab passed (${run.passedCount}/${run.totalFixtures}). Rule is eligible for independent approval.`,
+        'success'
+      );
+    } else {
+      notify(
+        `Test Lab blocked release (${run.failedCount} fixture failure). Review diagnostics below.`,
+        'warning'
+      );
+    }
+
+    return run;
+  };
+
+  const submitRuleForApproval = (ruleId: string): { ok: boolean; message: string } => {
+    const check = can('SUBMIT_RULE_FOR_APPROVAL');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
+
+    const targetRule = rules.find((r) => r.id === ruleId);
+    if (!targetRule) return { ok: false, message: 'Rule not found.' };
+
+    const currentHash = computeRuleSnapshotHash(targetRule);
+    const matchingRun = testRuns.find(
+      (tr) => tr.ruleId === ruleId && tr.ruleSnapshotHash === currentHash
+    );
+
+    if (!matchingRun) {
+      const msg =
+        'Stale or missing test run: Rule parameters changed since the last sandbox run. Run Test Lab before submitting.';
+      notify(msg, 'warning');
+      return { ok: false, message: msg };
+    }
+    if (!matchingRun.gatePassed) {
+      const msg = `Submission blocked: Latest sandbox run has ${matchingRun.failedCount} failing fixture(s).`;
+      notify(msg, 'error');
+      return { ok: false, message: msg };
+    }
+
+    setRules((prev) =>
+      prev.map((r) => (r.id === ruleId ? { ...r, status: 'Pending Approval' } : r))
+    );
+    setPolicyVersions((prev) =>
+      prev.map((pv) =>
+        pv.ruleId === ruleId && pv.version === targetRule.version
+          ? { ...pv, status: 'Pending Approval' }
+          : pv
+      )
+    );
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'SUBMIT_RULE_FOR_INDEPENDENT_APPROVAL',
+      category: 'POLICY',
+      source: 'Policy Governance Workflow',
+      targetEntityId: ruleId,
+      beforeState: 'Tested',
+      afterState: 'Pending Approval',
+      details: `Submitted ${targetRule.ruleCode} (${targetRule.version}) after ${matchingRun.passedCount}/${matchingRun.totalFixtures} fixture pass. Awaiting independent reviewer (Alex Morgan).`
+    });
+
+    notify(
+      `Submitted ${targetRule.ruleCode} (${targetRule.version}) for independent approval. Switch to Alex Morgan to approve.`,
+      'success'
+    );
+    return { ok: true, message: 'Submitted for independent approval.' };
+  };
+
+  const approveAndPublishRule = (
+    ruleId: string,
+    notes: string
+  ): { ok: boolean; message: string } => {
+    const targetRule = rules.find((r) => r.id === ruleId);
+    if (!targetRule) return { ok: false, message: 'Rule not found.' };
+
+    const check = can('APPROVE_RULE_PUBLICATION', {
+      ruleAuthorName: targetRule.author
+    });
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
+
+    const currentHash = computeRuleSnapshotHash(targetRule);
+    const matchingRun = testRuns.find(
+      (tr) => tr.ruleId === ruleId && tr.ruleSnapshotHash === currentHash && tr.gatePassed
+    );
+    if (!matchingRun) {
+      const msg =
+        'Publication blocked: Rule must pass all Test Lab fixtures on the exact current snapshot before approval.';
+      notify(msg, 'error');
+      return { ok: false, message: msg };
+    }
+
+    const now = nowTimestampUtc();
+    const publishedVersion = targetRule.version.replace('-draft', '');
+
+    setRules((prev) =>
+      prev.map((r) =>
+        r.id === ruleId
+          ? {
+              ...r,
+              version: publishedVersion,
+              status: 'Published',
+              approver: `${currentPersona.name} (${currentPersona.roleLabel})`,
+              approvedAt: now,
+              approvalNotes: notes
+            }
+          : r
+      )
+    );
+
+    setPolicyVersions((prev) => [
+      ...prev.map((pv) =>
+        pv.ruleId === ruleId && pv.version === targetRule.version
+          ? {
+              ...pv,
+              version: publishedVersion,
+              status: 'Published' as const,
+              approver: `${currentPersona.name} (${currentPersona.roleLabel})`,
+              approvedAt: now,
+              approvalNotes: notes
+            }
+          : pv.ruleCode === 'LIC-CA-RPH' && pv.status === 'Published'
+          ? { ...pv, status: 'Superseded' as const }
+          : pv
+      )
+    ]);
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'APPROVE_AND_PUBLISH_RULE_VERSION',
+      category: 'POLICY',
+      source: 'Policy Governance Gate',
+      targetEntityId: ruleId,
+      beforeState: 'Pending Approval',
+      afterState: `Published (${publishedVersion})`,
+      details: `Independent reviewer ${currentPersona.name} approved and published ${targetRule.ruleCode} ${publishedVersion} (author: ${targetRule.author}). Notes: ${notes}`
+    });
+
+    notify(`Published ${targetRule.ruleCode} ${publishedVersion} with independent sign-off.`, 'success');
+    return { ok: true, message: `Published ${publishedVersion}.` };
+  };
+
+  const rollbackRuleVersion = (ruleId: string, targetVersion: string) => {
+    const check = can('CREATE_DRAFT_RULE');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
+    setRules((prev) =>
+      prev.map((r) =>
+        r.id === ruleId ? { ...r, version: targetVersion, status: 'Published' } : r
+      )
+    );
+    setPolicyVersions((prev) =>
+      prev.map((pv) =>
+        pv.ruleId === ruleId
+          ? {
+              ...pv,
+              status: pv.version === targetVersion ? 'Published' : 'Superseded'
+            }
+          : pv
+      )
+    );
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'ROLLBACK_RULE_VERSION',
+      category: 'POLICY',
+      source: 'Rule Version Governance',
+      targetEntityId: ruleId,
+      afterState: `Published (${targetVersion})`,
+      details: `Rolled back rule ${ruleId} to version ${targetVersion}.`
+    });
+    notify(`Rolled back rule to version ${targetVersion}.`, 'warning');
+  };
+
+  // WORKFLOW 1: Maya sends employee outreach
+  const approveAndSendOutreach = (
+    caseId: string,
+    subject: string,
+    body: string,
+    channel: 'Simulated Demo Portal' | 'Workday Inbox Check' = 'Simulated Demo Portal'
+  ): { ok: boolean; message: string } => {
+    if (killSwitchState.isTriggered) {
+      const msg = 'Action blocked: Emergency AI Kill Switch is active. Resume controls in AI Governance.';
+      notify(msg, 'error');
+      return { ok: false, message: msg };
+    }
+
+    const check = can('SEND_EMPLOYEE_OUTREACH');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
+
+    const targetCase = cases.find((c) => c.id === caseId);
+    if (!targetCase) return { ok: false, message: 'Case not found.' };
+
+    const timestamp = nowTimestampUtc();
+
+    setCases((prev) =>
+      prev.map((c) =>
+        c.id === caseId
+          ? {
+              ...c,
+              workflowState: 'evidence_requested',
+              documentState: c.documentState === 'REJECTED' || c.documentState === 'MISSING' ? 'REQUESTED' : c.documentState
+            }
+          : c
+      )
+    );
+
+    setRequirements((prev) =>
+      prev.map((req) =>
+        req.requirementId === targetCase.requirementId
+          ? {
+              ...req,
+              documentState:
+                req.documentState === 'REJECTED' || req.documentState === 'MISSING'
+                  ? 'REQUESTED'
+                  : req.documentState
+            }
+          : req
+      )
+    );
+
+    setTasks((prev) =>
+      prev.map((t) => (t.caseId === caseId ? { ...t, status: 'IN_PROGRESS' } : t))
+    );
+
+    setThreads((prev) => {
+      const existing = prev.find((th) => th.caseId === caseId);
+      const outboundMsg = {
+        id: `MSG-${Date.now()}`,
+        senderType: 'HR_OPERATIONS' as const,
+        senderName: currentPersona.name,
+        senderRole: currentPersona.roleLabel,
+        timestamp,
+        channel,
+        subject,
+        content: body,
+        deliveryStatus: 'Simulated Delivered' as const
+      };
+      if (existing) {
+        return prev.map((th) =>
+          th.caseId === caseId ? { ...th, subject, messages: [...th.messages, outboundMsg] } : th
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: `THR-${Date.now()}`,
+          caseId,
+          workerId: targetCase.workerId,
+          subject,
+          messages: [outboundMsg]
+        }
+      ];
+    });
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'SEND_EMPLOYEE_OUTREACH',
+      category: 'OUTREACH',
+      source: channel,
+      targetEntityId: caseId,
+      workerId: targetCase.workerId,
+      beforeState: targetCase.workflowState,
+      afterState: 'evidence_requested',
+      details: `Dispatched simulated employee outreach to ${targetCase.workerName} via ${channel}.`
+    });
+
+    notify(`Simulated outreach sent to ${targetCase.workerName}. Employee portal ready for response.`, 'success');
+    return { ok: true, message: 'Outreach sent.' };
+  };
+
+  // WORKFLOW 2: Simulated Employee Portal Submission (Upload NEVER equals PSV!)
+  const submitEmployeePortalResponse = (
+    caseId: string,
+    payload: EmployeePortalSubmitPayload
+  ): { ok: boolean; message: string } => {
+    const targetCase = cases.find((c) => c.id === caseId);
+    const targetReq = requirements.find((r) => r.requirementId === targetCase?.requirementId);
+    if (!targetCase || !targetReq) {
+      return { ok: false, message: 'Case or requirement not found.' };
+    }
+
+    const timestamp = nowTimestampUtc();
+    const evId = `EV-${Date.now().toString().slice(-6)}`;
+
+    if (payload.mode === 'reply_question') {
+      setThreads((prev) =>
+        prev.map((th) =>
+          th.caseId === caseId
+            ? {
+                ...th,
+                messages: [
+                  ...th.messages,
+                  {
+                    id: `MSG-EMP-${Date.now()}`,
+                    senderType: 'EMPLOYEE',
+                    senderName: targetCase.workerName,
+                    senderRole: 'Employee (Simulated Portal)',
+                    timestamp,
+                    channel: 'Simulated Demo Portal',
+                    content: payload.note,
+                    deliveryStatus: 'Employee Replied'
+                  }
+                ]
+              }
+            : th
+        )
+      );
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId ? { ...c, workflowState: 'employee_responded' } : c
+        )
+      );
+      logAuditEvent({
+        actor: targetCase.workerName,
+        actorRole: 'Employee (Simulated Portal)',
+        action: 'EMPLOYEE_PORTAL_QUESTION_REPLY',
+        category: 'EVIDENCE',
+        source: 'Simulated Employee Portal',
+        targetEntityId: caseId,
+        workerId: targetCase.workerId,
+        details: `Employee replied in portal: "${payload.note}"`
+      });
+      notify(`Employee reply recorded for ${targetCase.workerName}.`, 'info');
+      return { ok: true, message: 'Reply recorded.' };
+    }
+
+    if (payload.mode === 'already_submitted_workday') {
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId
+            ? {
+                ...c,
+                workflowState: 'employee_responded',
+                externalSyncState: 'RECONCILIATION_REQUIRED',
+                documentState: 'REVIEW_REQUIRED'
+              }
+            : c
+        )
+      );
+      setThreads((prev) => {
+        const msg = {
+          id: `MSG-EMP-${Date.now()}`,
+          senderType: 'EMPLOYEE' as const,
+          senderName: targetCase.workerName,
+          senderRole: 'Employee (Simulated Portal)',
+          timestamp,
+          channel: 'Simulated Demo Portal' as const,
+          content:
+            payload.note ||
+            'I already submitted this documentation directly in Workday earlier this week. Please re-check Workday inbox.',
+          deliveryStatus: 'Employee Replied' as const
+        };
+        const exists = prev.some((t) => t.caseId === caseId);
+        if (!exists) {
+          return [
+            ...prev,
+            {
+              id: `THR-${Date.now()}`,
+              caseId,
+              workerId: targetCase.workerId,
+              subject: `Re: ${targetCase.title}`,
+              messages: [msg]
+            }
+          ];
+        }
+        return prev.map((th) =>
+          th.caseId === caseId ? { ...th, messages: [...th.messages, msg] } : th
+        );
+      });
+      logAuditEvent({
+        actor: targetCase.workerName,
+        actorRole: 'Employee (Simulated Portal)',
+        action: 'EMPLOYEE_REPORTED_PRIOR_WORKDAY_SUBMISSION',
+        category: 'WORKDAY_SYNC',
+        source: 'Simulated Employee Portal',
+        targetEntityId: caseId,
+        workerId: targetCase.workerId,
+        afterState: 'RECONCILIATION_REQUIRED',
+        details: `Employee reported prior Workday submission. Case flagged for HR Workday Inbox reconciliation.`
+      });
+      notify(
+        `${targetCase.workerName} reported prior Workday submission — flagged for Workday Inbox check.`,
+        'warning'
+      );
+      return { ok: true, message: 'Flagged for Workday reconciliation.' };
+    }
+
+    // Actual uploaded file OR 1-click sample renewal submission
+    const file = payload.file;
+    const fileName =
+      file?.name ||
+      payload.fileName ||
+      (targetCase.workerId === 'EMP-10419'
+        ? 'Daniel_Kim_CA_Pharmacist_Renewal_2028.pdf'
+        : `${targetCase.workerName.replace(/\s+/g, '_')}_Credential_Submission.pdf`);
+    const fileSize = file
+      ? `${Math.max(1, Math.round(file.size / 1024))} KB`
+      : payload.fileSize || '342 KB';
+    const mimeType = file?.type || payload.mimeType || 'application/pdf';
+
+    if (file) {
+      const objectUrl = URL.createObjectURL(file);
+      setUploadedFilePreviews((prev) => ({
+        ...prev,
+        [evId]: { evidenceId: evId, objectUrl, fileName, mimeType }
+      }));
+    }
+
+    const isActualBrowserFile = Boolean(file);
+    const extractionMethodNote = isActualBrowserFile
+      ? mimeType.startsWith('text/')
+        ? 'Browser text file read locally; metadata fields remain unverified pending reviewer inspection.'
+        : 'Browser file attachment captured (binary PDF/image metadata only — no server-side OCR or authenticity check performed in demo).'
+      : 'Simulated 1-click demo document fixture — requires Primary Source Verification before licensure closure.';
+
+    const newEvidence: EvidenceItem = {
+      id: evId,
+      workerId: targetCase.workerId,
+      requirementId: targetReq.requirementId,
+      documentName: fileName,
+      documentType: targetReq.name,
+      sourceSystem: 'Employee Portal',
+      sourceUri: `portal://demo-submissions/${targetCase.workerId}/${fileName}`,
+      uploadedAt: timestamp,
+      asOfTimestamp: timestamp,
+      expirationDate: payload.expirationDate || '2028-09-15',
+      licenseNumber:
+        payload.licenseNumber ||
+        (targetCase.workerId === 'EMP-10419' ? 'RPH-84920' : 'SUB-DEMO-01'),
+      issuingJurisdiction: targetCase.state,
+      extractionConfidence: isActualBrowserFile ? 78 : 94,
+      extractionMethodNote,
+      fileSize,
+      mimeType,
+      status: 'REVIEW_REQUIRED',
+      extractedFields: [
+        {
+          label: 'Submitted File',
+          value: fileName,
+          confidence: 100,
+          sourceNotice: 'Browser file metadata'
+        },
+        {
+          label: 'Claimed Expiration',
+          value: payload.expirationDate || '2028-09-15',
+          confidence: isActualBrowserFile ? 75 : 94,
+          sourceNotice: isActualBrowserFile
+            ? 'Unverified form input (manual inspection required)'
+            : 'Simulated fixture field — NOT verified against board'
+        }
+      ]
+    };
+
+    const { updatedCase, updatedRequirement } = applyEmployeeSubmissionToCase(
+      targetCase,
+      targetReq,
+      newEvidence
+    );
+
+    setEvidenceItems((prev) => [newEvidence, ...prev]);
+    setCases((prev) => prev.map((c) => (c.id === caseId ? updatedCase : c)));
+    setRequirements((prev) =>
+      prev.map((r) => (r.requirementId === targetReq.requirementId ? updatedRequirement : r))
+    );
+
+    setThreads((prev) => {
+      const msg = {
+        id: `MSG-EMP-${Date.now()}`,
+        senderType: 'EMPLOYEE' as const,
+        senderName: targetCase.workerName,
+        senderRole: 'Employee (Simulated Portal)',
+        timestamp,
+        channel: 'Simulated Demo Portal' as const,
+        content:
+          payload.note ||
+          `Submitted renewal document "${fileName}" for review.`,
+        deliveryStatus: 'Employee Replied' as const,
+        attachmentMetadata: {
+          fileName,
+          fileSize,
+          mimeType,
+          extractionStatusLabel:
+            targetReq.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION'
+              ? 'Received — Pending Primary Source Verification'
+              : 'Received — Pending HR Review'
+        }
+      };
+      const exists = prev.some((th) => th.caseId === caseId);
+      if (!exists) {
         return [
           ...prev,
           {
-            id: `THREAD-${Date.now()}`,
+            id: `THR-${Date.now()}`,
             caseId,
-            employeeId: targetCase.employeeId,
-            employeeName: targetCase.employeeName,
-            subject,
-            messages: [
-              {
-                id: `MSG-${Date.now()}`,
-                sender: 'HR_OPERATIONS',
-                senderName: `${currentPersona.name} (HR Operations)`,
-                timestamp,
-                content: body
-              }
-            ]
+            workerId: targetCase.workerId,
+            subject: `Re: ${targetCase.title}`,
+            messages: [msg]
           }
         ];
       }
+      return prev.map((th) =>
+        th.caseId === caseId ? { ...th, messages: [...th.messages, msg] } : th
+      );
     });
 
-    // 4. Log Audit Event
+    logAuditEvent({
+      actor: targetCase.workerName,
+      actorRole: 'Employee (Simulated Portal)',
+      action: 'SUBMIT_EVIDENCE_VIA_PORTAL',
+      category: 'EVIDENCE',
+      source: 'Simulated Employee Portal',
+      targetEntityId: caseId,
+      workerId: targetCase.workerId,
+      beforeState: targetCase.documentState,
+      afterState: `${updatedCase.documentState} / PSV: ${updatedCase.verificationState}`,
+      details: `Received "${fileName}" (${fileSize}). Document marked REVIEW_REQUIRED; verification remains ${updatedCase.verificationState} (upload does not verify licensure).`
+    });
+
+    notify(
+      targetReq.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION'
+        ? `File received (${fileName}). PSV remains PENDING_SOURCE_CHECK — switch to Alex Morgan to run board check.`
+        : `File received (${fileName}). Ready for HR review.`,
+      'info'
+    );
+    return { ok: true, message: 'Submission recorded.' };
+  };
+
+  // WORKFLOW 3: Alex Morgan runs Simulated Primary Source Verification
+  const runPrimarySourceVerification = (
+    caseId: string,
+    fixtureOutcome: 'VERIFIED_ACTIVE' | 'RESTRICTED' | 'VERIFICATION_FAILED' | 'UNVERIFIED'
+  ): { ok: boolean; message: string } => {
+    const targetCase = cases.find((c) => c.id === caseId);
+    const targetReq = requirements.find((r) => r.requirementId === targetCase?.requirementId);
+    if (!targetCase || !targetReq) {
+      return { ok: false, message: 'Case or requirement not found.' };
+    }
+
+    const now = nowTimestampUtc();
+    const verifId = `PSV-${Date.now().toString().slice(-6)}`;
+    const latestEvidence = evidenceItems.find(
+      (e) => e.requirementId === targetReq.requirementId
+    );
+
+    const newVerification: CredentialVerification = {
+      id: verifId,
+      workerId: targetCase.workerId,
+      requirementId: targetReq.requirementId,
+      evidenceItemId: latestEvidence?.id,
+      method: 'PRIMARY_SOURCE_VERIFICATION',
+      sourceName: `${targetCase.state} Licensing Board Roster (Simulated Demo Fixture)`,
+      sourceTypeLabel: 'Simulated Board Fixture (Demo Only — No Live API Call)',
+      licenseNumberChecked: latestEvidence?.licenseNumber || '#RPH-84920',
+      employeeNameMatched: fixtureOutcome !== 'UNVERIFIED',
+      returnedStatus: fixtureOutcome,
+      restrictionsNote:
+        fixtureOutcome === 'RESTRICTED'
+          ? 'Simulated Fixture: Board disciplinary suspension / practice restriction reported.'
+          : fixtureOutcome === 'VERIFICATION_FAILED'
+          ? 'Simulated Fixture: External board lookup endpoint timed out (503). Manual retry required.'
+          : undefined,
+      expirationDate: fixtureOutcome === 'VERIFIED_ACTIVE' ? '2028-09-15' : latestEvidence?.expirationDate,
+      checkedAt: now,
+      verifierName: currentPersona.name,
+      verifierRole: currentPersona.roleLabel,
+      receiptReference: `SIM-PSV-${Date.now().toString().slice(-6)}`,
+      isSimulated: true
+    };
+
+    const result = applyPrimarySourceVerificationResult(
+      activeRoleId,
+      targetCase,
+      targetReq,
+      newVerification
+    );
+
+    if (!result.valid || !result.updatedCase || !result.updatedRequirement) {
+      notify(result.error || 'PSV execution blocked.', 'error');
+      return { ok: false, message: result.error || 'PSV blocked.' };
+    }
+
+    setVerifications((prev) => [newVerification, ...prev]);
+    setCases((prev) => prev.map((c) => (c.id === caseId ? result.updatedCase! : c)));
+    setRequirements((prev) =>
+      prev.map((r) =>
+        r.requirementId === targetReq.requirementId ? result.updatedRequirement! : r
+      )
+    );
+
+    if (fixtureOutcome === 'RESTRICTED') {
+      setWorkers((prev) =>
+        prev.map((w) =>
+          w.id === targetCase.workerId
+            ? { ...w, clinicalEligibility: 'REVIEW_REQUIRED' }
+            : w
+        )
+      );
+    }
+
     logAuditEvent({
       actor: currentPersona.name,
       actorRole: currentPersona.roleLabel,
-      action: 'APPROVE_AND_DISPATCH_REMEDIATION',
-      category: 'OUTREACH',
+      action: `RUN_SIMULATED_PSV_${fixtureOutcome}`,
+      category: 'PSV_CHECK',
+      source: newVerification.sourceName,
       targetEntityId: caseId,
-      targetEntityType: 'Case',
-      details: `Approved AI-drafted outreach to ${targetCase.employeeName} (${targetCase.employeeId}) via Secure Portal. Case transitioned to Amber (Awaiting Response).`
+      workerId: targetCase.workerId,
+      beforeState: targetCase.verificationState,
+      afterState: fixtureOutcome,
+      details: `Simulated PSV returned ${fixtureOutcome} (Receipt ${newVerification.receiptReference}).${
+        fixtureOutcome === 'RESTRICTED'
+          ? ' Escalated to clinical leadership; case closure blocked.'
+          : ''
+      }`
     });
+
+    notify(
+      fixtureOutcome === 'VERIFIED_ACTIVE'
+        ? `Simulated PSV passed (VERIFIED_ACTIVE · ${newVerification.receiptReference}).`
+        : `Simulated PSV returned ${fixtureOutcome}. Closure remains blocked.`,
+      fixtureOutcome === 'VERIFIED_ACTIVE' ? 'success' : 'error'
+    );
+    return { ok: true, message: `PSV recorded as ${fixtureOutcome}.` };
   };
 
-  // HERO ACTION 2: Simulate employee portal upload (Daniel Kim submits license)
-  const simulateEmployeeUpload = (
-    caseId: string, 
-    details: { fileName: string; fileSize: string; licenseNumber?: string; expirationDate?: string }
-  ) => {
-    const targetCase = complianceCases.find(c => c.id === caseId);
-    if (!targetCase) return;
+  // WORKFLOW 4: Authorized Clinical Duty Eligibility Decision (Alex / Clinical Leader simulation only)
+  const recordClinicalEligibilityDecision = (
+    caseId: string,
+    decision: ClinicalDutyEligibilityState,
+    notes: string
+  ): { ok: boolean; message: string } => {
+    const check = can('RECORD_CLINICAL_DUTY_ELIGIBILITY');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
 
-    // 1. Update Case Status -> AMBER_NEEDS_HR_REVIEW
-    setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-      ...c,
-      status: 'AMBER_NEEDS_HR_REVIEW'
-    } : c));
+    const targetCase = cases.find((c) => c.id === caseId);
+    if (!targetCase) return { ok: false, message: 'Case not found.' };
 
-    // 2. Add message to thread with attachment
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today';
-    setMessageThreads(prev => prev.map(th => th.caseId === caseId ? {
-      ...th,
-      messages: [
-        ...th.messages,
-        {
-          id: `MSG-EMP-${Date.now()}`,
-          sender: 'EMPLOYEE',
-          senderName: targetCase.employeeName,
-          timestamp,
-          content: `Hi Maya, I have completed my California Board of Pharmacy renewal. Attached is my official license verification certificate with expiration extended through September 15, 2028. Thank you!`,
-          attachments: [
-            {
-              filename: details.fileName,
-              size: details.fileSize,
-              verified: true
+    const now = nowTimestampUtc();
+
+    setWorkers((prev) =>
+      prev.map((w) =>
+        w.id === targetCase.workerId
+          ? {
+              ...w,
+              clinicalEligibility: decision,
+              clinicalEligibilityDecisionBy: `${currentPersona.name} (Simulated Clinical Leader Sign-off)`,
+              clinicalEligibilityDecisionAt: now,
+              clinicalEligibilityNotes: notes
             }
-          ]
+          : w
+      )
+    );
+
+    setCases((prev) =>
+      prev.map((c) =>
+        c.id === caseId
+          ? {
+              ...c,
+              clinicalEligibilityState: decision,
+              escalation: c.escalation
+                ? {
+                    ...c.escalation,
+                    status: 'DECISION_RECORDED',
+                    acknowledgedBy: currentPersona.name,
+                    acknowledgedAt: now,
+                    decisionRecorded: decision,
+                    decisionNotes: notes
+                  }
+                : undefined,
+              reviewDecisions: [
+                ...c.reviewDecisions,
+                {
+                  id: `DEC-${Date.now().toString().slice(-5)}`,
+                  caseId,
+                  actorName: currentPersona.name,
+                  actorRole: 'Credentialing / Clinical Leader Sign-off (Demo)',
+                  decision:
+                    decision === 'AUTHORIZED_BY_DESIGNATED_LEADER' ? 'APPROVED' : 'ESCALATED',
+                  notes,
+                  method: 'Designated Clinical Eligibility Decision',
+                  sourceRef: 'Clinical Leadership Review Panel',
+                  timestamp: now
+                }
+              ]
+            }
+          : c
+      )
+    );
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: 'Credentialing / Clinical Leader Sign-off (Demo)',
+      action: 'RECORD_CLINICAL_DUTY_ELIGIBILITY',
+      category: 'CLINICAL_ELIGIBILITY',
+      source: 'Clinical Leadership Decision Panel',
+      targetEntityId: caseId,
+      workerId: targetCase.workerId,
+      beforeState: targetCase.clinicalEligibilityState,
+      afterState: decision,
+      details: `Recorded clinical duty eligibility as ${decision}. Notes: ${notes}`
+    });
+
+    notify(`Clinical duty eligibility updated to ${decision}.`, 'success');
+    return { ok: true, message: 'Clinical eligibility recorded.' };
+  };
+
+  // WORKFLOW 5: Maya closes verified administrative case (ONLY this requirement; multi-requirement score stays accurate!)
+  const reviewAndCloseCase = (
+    caseId: string,
+    approved: boolean,
+    notes: string
+  ): { ok: boolean; message: string } => {
+    const targetCase = cases.find((c) => c.id === caseId);
+    const targetWorker = workers.find((w) => w.id === targetCase?.workerId);
+    const targetRule = rules.find((r) => r.id === targetCase?.ruleId);
+
+    if (!targetCase || !targetWorker) {
+      return { ok: false, message: 'Case or worker not found.' };
+    }
+
+    const now = nowTimestampUtc();
+
+    if (!approved) {
+      const check = can('REVIEW_ORDINARY_HR_EVIDENCE');
+      if (!check.allowed) {
+        notify(check.reason, 'error');
+        return { ok: false, message: check.reason };
+      }
+
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId
+            ? {
+                ...c,
+                documentState: 'REJECTED',
+                workflowState: 'evidence_requested',
+                reviewDecisions: [
+                  ...c.reviewDecisions,
+                  {
+                    id: `DEC-${Date.now().toString().slice(-5)}`,
+                    caseId,
+                    actorName: currentPersona.name,
+                    actorRole: currentPersona.roleLabel,
+                    decision: 'REJECTED',
+                    notes,
+                    method: 'HR Evidence Review',
+                    sourceRef: 'Employee Dossier',
+                    timestamp: now
+                  }
+                ]
+              }
+            : c
+        )
+      );
+      setRequirements((prev) =>
+        prev.map((r) =>
+          r.requirementId === targetCase.requirementId
+            ? { ...r, documentState: 'REJECTED' }
+            : r
+        )
+      );
+      logAuditEvent({
+        actor: currentPersona.name,
+        actorRole: currentPersona.roleLabel,
+        action: 'REJECT_EVIDENCE_AND_REOPEN_REQUEST',
+        category: 'CASE',
+        source: 'HR Evidence Review',
+        targetEntityId: caseId,
+        workerId: targetCase.workerId,
+        afterState: 'REJECTED / evidence_requested',
+        details: `Rejected evidence for ${targetCase.workerName}: ${notes}`
+      });
+      notify(`Evidence rejected for ${targetCase.workerName}. Re-request triggered.`, 'warning');
+      return { ok: true, message: 'Evidence rejected.' };
+    }
+
+    const validation = validateCaseClosure(activeRoleId, targetCase, targetRule, targetWorker);
+    if (!validation.valid) {
+      notify(validation.error || 'Closure blocked.', 'error');
+      return { ok: false, message: validation.error || 'Closure blocked.' };
+    }
+
+    setCases((prev) =>
+      prev.map((c) =>
+        c.id === caseId
+          ? {
+              ...c,
+              documentState: 'ACCEPTED',
+              workflowState: 'resolved',
+              externalSyncState: 'QUEUED',
+              resolvedAt: now,
+              resolvedBy: currentPersona.name,
+              reviewDecisions: [
+                ...c.reviewDecisions,
+                {
+                  id: `DEC-${Date.now().toString().slice(-5)}`,
+                  caseId,
+                  actorName: currentPersona.name,
+                  actorRole: currentPersona.roleLabel,
+                  decision: 'APPROVED',
+                  notes,
+                  method: 'Administrative Case Closure',
+                  sourceRef: targetCase.verificationState,
+                  timestamp: now
+                }
+              ]
+            }
+          : c
+      )
+    );
+
+    setRequirements((prev) =>
+      prev.map((r) =>
+        r.requirementId === targetCase.requirementId
+          ? { ...r, documentState: 'ACCEPTED', lastEvaluatedAt: DEMO_REFERENCE_DATE }
+          : r
+      )
+    );
+
+    setEvidenceItems((prev) =>
+      prev.map((ev) =>
+        ev.requirementId === targetCase.requirementId && ev.status === 'REVIEW_REQUIRED'
+          ? { ...ev, status: 'ACCEPTED' }
+          : ev
+      )
+    );
+
+    setTasks((prev) =>
+      prev.map((t) => (t.caseId === caseId ? { ...t, status: 'COMPLETED' } : t))
+    );
+
+    const otherOpenCases = cases.filter(
+      (c) => c.workerId === targetCase.workerId && c.id !== caseId && c.workflowState !== 'resolved'
+    );
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'CLOSE_ADMINISTRATIVE_CASE',
+      category: 'CASE',
+      source: 'HR Case Closure Gate',
+      targetEntityId: caseId,
+      workerId: targetCase.workerId,
+      beforeState: targetCase.workflowState,
+      afterState: 'resolved',
+      details: `Closed ${targetCase.caseNumber} for ${targetCase.workerName}. ${
+        otherOpenCases.length > 0
+          ? `Note: ${otherOpenCases.length} other requirement case(s) remain open for this worker.`
+          : 'All applicable requirements for worker are now satisfied.'
+      }`
+    });
+
+    notify(
+      otherOpenCases.length > 0
+        ? `Closed ${targetCase.caseNumber}. Worker remains Amber because ${otherOpenCases.length} other requirement(s) remain open.`
+        : `Closed ${targetCase.caseNumber}. All applicable worker requirements are now Ready.`,
+      'success'
+    );
+
+    return { ok: true, message: 'Case closed.' };
+  };
+
+  // Non-PSV completion (e.g., Daniel Kim CASE-9022 GCP training, Elena BLS, Kevin Workday reconciliation)
+  const completeNonPSVRequirement = (
+    caseId: string,
+    notes: string
+  ): { ok: boolean; message: string } => {
+    const check = can('REVIEW_ORDINARY_HR_EVIDENCE');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
+    const targetCase = cases.find((c) => c.id === caseId);
+    const targetReq = requirements.find((r) => r.requirementId === targetCase?.requirementId);
+    if (!targetCase || !targetReq) {
+      return { ok: false, message: 'Case not found.' };
+    }
+    if (targetReq.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION') {
+      const msg =
+        'Blocked: Primary Source Verification credentials cannot be completed through ordinary HR training/roster review.';
+      notify(msg, 'error');
+      return { ok: false, message: msg };
+    }
+
+    const now = nowTimestampUtc();
+    const evId = `EV-NONPSV-${Date.now().toString().slice(-5)}`;
+
+    const newEvidence: EvidenceItem = {
+      id: evId,
+      workerId: targetCase.workerId,
+      requirementId: targetReq.requirementId,
+      documentName: `${targetReq.ruleCode}_Verified_Roster_Record.pdf`,
+      documentType: targetReq.name,
+      sourceSystem: 'LMS',
+      sourceUri: `lms://roster-confirmed/${targetCase.workerId}/${targetReq.ruleCode}`,
+      uploadedAt: now,
+      asOfTimestamp: now,
+      expirationDate: '2027-11-12',
+      extractionConfidence: 99,
+      extractionMethodNote: 'HR confirmed organizational training/roster record.',
+      fileSize: '128 KB',
+      mimeType: 'application/pdf',
+      status: 'ACCEPTED',
+      extractedFields: [
+        {
+          label: 'Verification Basis',
+          value: targetReq.verificationMethod,
+          confidence: 99,
+          sourceNotice: 'Approved organizational record'
         }
       ]
-    } : th));
+    };
 
-    // 3. Log Audit Event
+    setEvidenceItems((prev) => [newEvidence, ...prev]);
+    setRequirements((prev) =>
+      prev.map((r) =>
+        r.requirementId === targetReq.requirementId
+          ? {
+              ...r,
+              documentState: 'ACCEPTED',
+              verificationState: 'NOT_REQUIRED',
+              evidenceItemId: evId,
+              lastEvaluatedAt: DEMO_REFERENCE_DATE
+            }
+          : r
+      )
+    );
+    setCases((prev) =>
+      prev.map((c) =>
+        c.id === caseId
+          ? {
+              ...c,
+              documentState: 'ACCEPTED',
+              workflowState: 'resolved',
+              externalSyncState: 'QUEUED',
+              resolvedAt: now,
+              resolvedBy: currentPersona.name,
+              reviewDecisions: [
+                ...c.reviewDecisions,
+                {
+                  id: `DEC-${Date.now().toString().slice(-5)}`,
+                  caseId,
+                  actorName: currentPersona.name,
+                  actorRole: currentPersona.roleLabel,
+                  decision: 'APPROVED',
+                  notes,
+                  method: targetReq.verificationMethod,
+                  sourceRef: 'Organizational Training / Workday Roster',
+                  timestamp: now
+                }
+              ]
+            }
+          : c
+      )
+    );
+    setTasks((prev) =>
+      prev.map((t) => (t.caseId === caseId ? { ...t, status: 'COMPLETED' } : t))
+    );
+
     logAuditEvent({
-      actor: targetCase.employeeName,
-      actorRole: 'Employee (Simulated Secure Portal)',
-      action: 'SUBMIT_EVIDENCE_DOCUMENT',
-      category: 'EVIDENCE',
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'COMPLETE_NON_PSV_REQUIREMENT',
+      category: 'CASE',
+      source: 'Organizational Roster / LMS',
       targetEntityId: caseId,
-      targetEntityType: 'Case',
-      details: `Uploaded renewal document "${details.fileName}" (${details.fileSize}) with detected License #RPH-84920, Valid through 2028-09-15.`
+      workerId: targetCase.workerId,
+      beforeState: targetCase.workflowState,
+      afterState: 'resolved',
+      details: `Resolved non-PSV case ${targetCase.caseNumber}: ${notes}`
     });
+
+    notify(`Resolved ${targetCase.caseNumber} (${targetCase.title}).`, 'success');
+    return { ok: true, message: 'Resolved.' };
   };
 
-  // HERO ACTION 3: Review evidence & approve resolution (Gate 3) -> RED -> AMBER -> GREEN!
-  const reviewEvidenceAndResolve = (caseId: string, approved: boolean, notes: string) => {
-    const targetCase = complianceCases.find(c => c.id === caseId);
-    if (!targetCase) return;
+  // WORKFLOW 6: Outbound Workday Staging Sync & Scoped Retry
+  const queueAndSyncWorkdayStaging = async (
+    caseId: string,
+    simulateTimeout504 = false
+  ): Promise<SyncTransaction | null> => {
+    const check = can('TRIGGER_WORKDAY_SYNC');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return null;
+    }
 
-    if (approved) {
-      // Transition Case to GREEN_RESOLVED
-      setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-        ...c,
-        status: 'GREEN_RESOLVED',
-        slaStatus: 'On Track',
-        hrmsSyncStatus: 'PENDING',
-        resolvedAt: new Date().toISOString(),
-        resolvedBy: currentPersona.name,
-        resolutionNotes: notes
-      } : c));
+    const targetCase = cases.find((c) => c.id === caseId);
+    const targetWorker = workers.find((w) => w.id === targetCase?.workerId);
+    if (!targetCase || !targetWorker) return null;
 
-      // Transition Employee to Complete / 100% health
-      setEmployees(prev => prev.map(emp => emp.id === targetCase.employeeId ? {
-        ...emp,
-        fileHealthScore: 100,
-        healthStatus: 'Complete',
-        openGapsCount: 0,
-        lastScanTime: 'Just now'
-      } : emp));
+    setCases((prev) =>
+      prev.map((c) => (c.id === caseId ? { ...c, externalSyncState: 'IN_PROGRESS' } : c))
+    );
 
-      // Complete Task
-      setRemediationTasks(prev => prev.map(t => t.caseId === caseId ? {
-        ...t,
-        status: 'COMPLETED'
-      } : t));
+    const readiness = workerReadinessMap[targetWorker.id];
+    const summaryStatus =
+      targetWorker.clinicalEligibility === 'REVIEW_REQUIRED' ||
+      targetWorker.clinicalEligibility === 'RESTRICTED_BY_AUTHORIZED_DECISION'
+        ? 'CLINICAL_REVIEW_REQUIRED'
+        : readiness?.overallStatus === 'READY'
+        ? 'READY'
+        : readiness?.overallStatus === 'INCOMPLETE_AMBER'
+        ? 'PARTIAL_PENDING'
+        : 'ACTION_REQUIRED';
 
-      // Log Audit Event
+    const latestEv = evidenceItems.find((e) => e.requirementId === targetCase.requirementId);
+    const payload = mockWorkdayAdapter.buildStagingPayload(
+      targetWorker,
+      targetCase,
+      summaryStatus,
+      latestEv?.licenseNumber || 'RPH-84920',
+      latestEv?.expirationDate || '2028-09-15'
+    );
+
+    const tx = await mockWorkdayAdapter.executeOutboundWriteback(payload, {
+      simulateTimeout504
+    });
+
+    const enrichedTx: SyncTransaction = {
+      ...tx,
+      workerId: targetWorker.id,
+      workerName: targetWorker.name,
+      caseId: targetCase.id
+    };
+
+    setSyncTransactions((prev) => [enrichedTx, ...prev]);
+
+    setCases((prev) =>
+      prev.map((c) =>
+        c.id === caseId
+          ? {
+              ...c,
+              externalSyncState: enrichedTx.status,
+              lastSyncTransactionId: enrichedTx.id
+            }
+          : c
+      )
+    );
+
+    if (enrichedTx.status === 'ACKNOWLEDGED') {
+      setHrmsMirror((prev) => applyAcknowledgedTxToMirror(prev, enrichedTx, targetWorker.id));
       logAuditEvent({
         actor: currentPersona.name,
         actorRole: currentPersona.roleLabel,
-        action: 'APPROVE_EVIDENCE_AND_RESOLVE_CASE',
-        category: 'CASE',
-        targetEntityId: caseId,
-        targetEntityType: 'Case',
-        details: `Verified replacement evidence for ${targetCase.employeeName}. Case marked RESOLVED (Green). Compliance file is 100% complete and audit-ready.`
+        action: 'WORKDAY_STAGING_WRITEBACK_ACKNOWLEDGED',
+        category: 'WORKDAY_SYNC',
+        source: 'MockWorkdayAdapter (Staging API)',
+        targetEntityId: enrichedTx.id,
+        workerId: targetWorker.id,
+        beforeState: 'QUEUED',
+        afterState: 'ACKNOWLEDGED',
+        details: `Simulated Workday staging writeback succeeded for ${targetWorker.name} (${targetCase.caseNumber}). Read-only HCM master fields untouched.`
       });
+      notify(
+        `Workday staging writeback acknowledged (${enrichedTx.id}) for ${targetWorker.name}.`,
+        'success'
+      );
     } else {
-      // Rejection keeps case AMBER
-      setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-        ...c,
-        status: 'AMBER_AWAITING_EMPLOYEE',
-        resolutionNotes: `Evidence rejected: ${notes}`
-      } : c));
+      logAuditEvent({
+        actor: currentPersona.name,
+        actorRole: currentPersona.roleLabel,
+        action: 'WORKDAY_STAGING_WRITEBACK_TIMEOUT',
+        category: 'WORKDAY_SYNC',
+        source: 'MockWorkdayAdapter (Staging API)',
+        targetEntityId: enrichedTx.id,
+        workerId: targetWorker.id,
+        beforeState: 'IN_PROGRESS',
+        afterState: 'FAILED (HTTP 504)',
+        details: `Simulated HTTP 504 timeout writing ${targetCase.caseNumber} to Workday staging. Local compliance closure remains preserved; eligible for scoped retry.`
+      });
+      notify(
+        `Simulated HTTP 504 timeout on ${enrichedTx.id}. Local case stays verified; retry transaction safely.`,
+        'error'
+      );
+    }
+
+    return enrichedTx;
+  };
+
+  const retrySyncTransaction = async (
+    txId: string,
+    simulateTimeout504 = false
+  ): Promise<SyncTransaction | null> => {
+    const check = can('TRIGGER_WORKDAY_SYNC');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return null;
+    }
+
+    const failedTx = syncTransactions.find((t) => t.id === txId);
+    if (!failedTx) return null;
+
+    const retried = await mockWorkdayAdapter.retryTransaction(failedTx, { simulateTimeout504 });
+
+    setSyncTransactions((prev) => prev.map((t) => (t.id === txId ? retried : t)));
+
+    if (retried.caseId) {
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === retried.caseId || c.caseNumber === retried.caseId
+            ? { ...c, externalSyncState: retried.status, lastSyncTransactionId: retried.id }
+            : c
+        )
+      );
+    }
+
+    if (retried.status === 'ACKNOWLEDGED' && retried.workerId) {
+      setHrmsMirror((prev) => applyAcknowledgedTxToMirror(prev, retried, retried.workerId!));
+      logAuditEvent({
+        actor: currentPersona.name,
+        actorRole: currentPersona.roleLabel,
+        action: 'RETRY_WORKDAY_STAGING_TX_ACKNOWLEDGED',
+        category: 'WORKDAY_SYNC',
+        source: 'MockWorkdayAdapter (Idempotent Retry)',
+        targetEntityId: retried.id,
+        workerId: retried.workerId,
+        beforeState: 'FAILED (HTTP 504)',
+        afterState: 'ACKNOWLEDGED',
+        details: `Scoped retry of ${retried.id} (key ${retried.idempotencyKey}) acknowledged for ${
+          retried.workerName || retried.workerId
+        }.`
+      });
+      notify(`Scoped retry acknowledged (${retried.id}) for ${retried.workerName || retried.workerId}.`, 'success');
+    } else {
+      notify(`Retry for ${retried.id} timed out again.`, 'error');
+    }
+
+    return retried;
+  };
+
+  // Simulate Workday Inbound New Hire or Role Transfer event
+  const simulateWorkdayWorkerEvent = (
+    type: 'NEW_HIRE' | 'ROLE_TRANSFER',
+    workerId?: string
+  ): { ok: boolean; message: string } => {
+    const check = can('TRIGGER_WORKDAY_SYNC');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
+
+    const publishedRules = rules.filter((r) => r.status === 'Published');
+
+    if (type === 'NEW_HIRE') {
+      const existing = workers.find((w) => w.id === 'EMP-10990');
+      if (existing) {
+        notify('Simulated New Hire (EMP-10990) already imported from Workday sandbox.', 'info');
+        return { ok: true, message: 'Already imported.' };
+      }
+
+      const newWorker: Worker = {
+        id: 'EMP-10990',
+        employeeNumber: 'EMP-10990',
+        name: 'Sophia Patel',
+        email: 's.patel@biovanguard-demo.example',
+        primaryRole: 'Registered Nurse',
+        primaryDepartment: 'Nursing',
+        primaryFacilityId: 'FAC-TX-HOSP',
+        primaryFacilityName: 'Texas Hospital',
+        primaryState: 'Texas',
+        workerType: 'Permanent',
+        employmentStatus: 'Preboarding',
+        hireDate: '2026-11-12',
+        startDate: '2026-11-26',
+        manager: 'Elena Rostova (Director of Nursing)',
+        initials: 'SP',
+        occupationalHealthSummary: {
+          clearanceStatus: 'PENDING_OCC_HEALTH',
+          restrictedAccessNote: 'Restricted medical details managed in Occupational Health EHR only.'
+        },
+        privilegingReference: { status: 'NOT_APPLICABLE' },
+        clinicalEligibility: 'REVIEW_REQUIRED'
+      };
+
+      const newAsn: EmploymentAssignment = {
+        id: 'ASN-10990-1',
+        workerId: 'EMP-10990',
+        facilityId: 'FAC-TX-HOSP',
+        facilityName: 'Texas Hospital',
+        state: 'Texas',
+        department: 'Nursing',
+        jobProfile: 'Registered Nurse',
+        workerType: 'Permanent',
+        effectiveStartDate: '2026-11-26',
+        isPrimary: true,
+        isClinicalDuty: true
+      };
+
+      const newReqs = buildRequirementsForWorkerAssignments(
+        newWorker,
+        [newAsn],
+        publishedRules,
+        requirements,
+        evidenceItems,
+        verifications,
+        DEMO_REFERENCE_DATE
+      );
+
+      setWorkers((prev) => [newWorker, ...prev]);
+      setAssignments((prev) => [newAsn, ...prev]);
+      setRequirements((prev) => [...prev, ...newReqs]);
+
+      // Create compliance cases for missing requirements
+      const generatedCases: ComplianceCase[] = newReqs.map((req, idx) => ({
+        id: `CASE-NH-${990 + idx}`,
+        caseNumber: `CASE-2026-NH-${990 + idx}`,
+        workerId: newWorker.id,
+        workerName: newWorker.name,
+        assignmentId: newAsn.id,
+        facilityId: newAsn.facilityId,
+        facilityName: newAsn.facilityName,
+        department: newAsn.department,
+        role: newAsn.jobProfile,
+        state: newAsn.state,
+        requirementId: req.requirementId,
+        ruleId: req.ruleId,
+        ruleVersion: 'v2.1',
+        caseCategory: 'Missing Preboarding Credential',
+        severity: req.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION' ? 'High' : 'Medium',
+        title: `Preboarding: ${req.name}`,
+        findingSummary: `Generated from simulated Workday New Hire event (start date ${newWorker.startDate}).`,
+        workflowState: 'detected',
+        documentState: req.documentState,
+        verificationState: req.verificationState,
+        clinicalEligibilityState:
+          req.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION'
+            ? 'REVIEW_REQUIRED'
+            : 'NOT_APPLICABLE',
+        externalSyncState: 'NOT_REQUIRED',
+        detectedDate: DEMO_REFERENCE_DATE,
+        dueDate: newWorker.startDate,
+        clinicalRiskOwner:
+          req.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION'
+            ? 'Alex Morgan (Credentialing)'
+            : 'N/A',
+        hrOutreachOwner: 'Maya (HR Operations)',
+        repositoriesSearched: ['Workday Worker Docs', 'SharePoint', 'Employee Portal'],
+        whyFlagged: {
+          policyName: 'Simulated Workday Preboarding Trigger',
+          policyVersion: 'v2.1',
+          policyEffectiveDate: '2026-01-15',
+          clause: 'New Hire Preboarding Gate',
+          clauseText: 'Applicable role requirements evaluated automatically on Workday preboarding import.',
+          requirementText: req.name,
+          inspectedSource: 'MockWorkdayAdapter Inbound Worker Event',
+          sourceAsOfTimestamp: nowTimestampUtc(),
+          foundEvidenceSummary: 'No preboarding document found in repositories.',
+          alternativesAccepted: ['Active License / Certificate Submission'],
+          extractionConfidence: 100,
+          confidenceDisclaimer: 'Deterministic Workday job-profile applicability match.',
+          uncertaintyNote: 'Preboarding worker start date 2026-11-26.',
+          whyAuthoritativeVerificationRequired:
+            req.verificationMethod === 'PRIMARY_SOURCE_VERIFICATION'
+              ? 'Primary Source Verification required prior to clinical floor start.'
+              : 'Standard HR/Training verification required.',
+          agentRunId: `RUN-WD-NH-${Date.now().toString().slice(-4)}`
+        },
+        reviewDecisions: []
+      }));
+
+      setCases((prev) => [...generatedCases, ...prev]);
 
       logAuditEvent({
         actor: currentPersona.name,
         actorRole: currentPersona.roleLabel,
-        action: 'REJECT_EVIDENCE',
-        category: 'CASE',
-        targetEntityId: caseId,
-        targetEntityType: 'Case',
-        details: `Rejected uploaded document for ${targetCase.employeeName}: ${notes}. Revised request requested.`
+        action: 'SIMULATE_WORKDAY_NEW_HIRE_EVENT',
+        category: 'WORKDAY_SYNC',
+        source: 'MockWorkdayAdapter Inbound Event',
+        targetEntityId: newWorker.id,
+        workerId: newWorker.id,
+        details: `Imported simulated New Hire Sophia Patel (Texas RN, start 2026-11-26). Generated ${newReqs.length} applicable requirements.`
       });
+
+      notify(
+        `Simulated Workday New Hire imported: Sophia Patel (${newReqs.length} requirements evaluated).`,
+        'success'
+      );
+      return { ok: true, message: 'New hire imported.' };
+    }
+
+    // ROLE_TRANSFER: Add California assignment to Elena Alvarez or selected worker
+    const targetWorker =
+      workers.find((w) => w.id === (workerId || 'EMP-10510')) || workers[1];
+    const transferAsnId = `ASN-TRF-${Date.now().toString().slice(-4)}`;
+    const hasCA = assignments.some(
+      (a) => a.workerId === targetWorker.id && a.state === 'California'
+    );
+    if (hasCA) {
+      notify(`${targetWorker.name} already holds a California transfer assignment.`, 'info');
+      return { ok: true, message: 'Transfer assignment already exists.' };
+    }
+
+    const transferAsn: EmploymentAssignment = {
+      id: transferAsnId,
+      workerId: targetWorker.id,
+      facilityId: 'FAC-CA-CRC',
+      facilityName: 'California Clinical Research Center',
+      state: 'California',
+      department: 'R&D/Clinical Operations',
+      jobProfile: 'Registered Nurse',
+      workerType: targetWorker.workerType,
+      effectiveStartDate: '2026-12-01',
+      isPrimary: false,
+      isClinicalDuty: true
+    };
+
+    const updatedAssignments = [transferAsn, ...assignments];
+    const addedReqs = buildRequirementsForWorkerAssignments(
+      targetWorker,
+      [transferAsn],
+      publishedRules,
+      requirements,
+      evidenceItems,
+      verifications,
+      DEMO_REFERENCE_DATE
+    );
+
+    setAssignments(updatedAssignments);
+    setRequirements((prev) => [...prev, ...addedReqs]);
+
+    const transferCases: ComplianceCase[] = addedReqs.map((req, idx) => ({
+      id: `CASE-TRF-${Date.now().toString().slice(-4)}-${idx}`,
+      caseNumber: `CASE-2026-TRF-${Date.now().toString().slice(-3)}`,
+      workerId: targetWorker.id,
+      workerName: targetWorker.name,
+      assignmentId: transferAsn.id,
+      facilityId: transferAsn.facilityId,
+      facilityName: transferAsn.facilityName,
+      department: transferAsn.department,
+      role: transferAsn.jobProfile,
+      state: transferAsn.state,
+      requirementId: req.requirementId,
+      ruleId: req.ruleId,
+      ruleVersion: 'v2.4',
+      caseCategory: 'Transfer Re-evaluation',
+      severity: 'High',
+      title: `Transfer Re-Evaluation: ${req.name}`,
+      findingSummary: `Simulated Workday Transfer event added California assignment starting 2026-12-01; state-scoped rule re-evaluated.`,
+      workflowState: 'detected',
+      documentState: req.documentState,
+      verificationState: req.verificationState,
+      clinicalEligibilityState: 'REVIEW_REQUIRED',
+      externalSyncState: 'NOT_REQUIRED',
+      detectedDate: DEMO_REFERENCE_DATE,
+      dueDate: '2026-11-30',
+      clinicalRiskOwner: 'Alex Morgan (Credentialing)',
+      hrOutreachOwner: 'Maya (HR Operations)',
+      repositoriesSearched: ['Workday Worker Docs', 'SharePoint', 'Employee Portal'],
+      whyFlagged: {
+        policyName: 'Cross-State Transfer Applicability Policy',
+        policyVersion: 'v2.4',
+        policyEffectiveDate: '2026-01-15',
+        clause: 'Multi-State Licensure Applicability',
+        clauseText: 'Out-of-state transfers trigger destination state licensure verification.',
+        requirementText: req.name,
+        inspectedSource: 'MockWorkdayAdapter Role/Location Transfer Event',
+        sourceAsOfTimestamp: nowTimestampUtc(),
+        foundEvidenceSummary: `Worker holds ${targetWorker.primaryState} assignment; new California assignment requires CA credential.`,
+        alternativesAccepted: ['California Registered Nurse License + PSV'],
+        extractionConfidence: 100,
+        confidenceDisclaimer: 'Deterministic transfer applicability evaluation.',
+        uncertaintyNote: 'Transfer effective 2026-12-01.',
+        whyAuthoritativeVerificationRequired:
+          'State licensure does not automatically transfer across non-compact jurisdictions.',
+        agentRunId: `RUN-WD-TRF-${Date.now().toString().slice(-4)}`
+      },
+      reviewDecisions: []
+    }));
+
+    setCases((prev) => [...transferCases, ...prev]);
+
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'SIMULATE_WORKDAY_TRANSFER_EVENT',
+      category: 'WORKDAY_SYNC',
+      source: 'MockWorkdayAdapter Inbound Event',
+      targetEntityId: targetWorker.id,
+      workerId: targetWorker.id,
+      details: `Simulated California transfer event for ${targetWorker.name}. Triggered ${addedReqs.length} new state-scoped requirement(s).`
+    });
+
+    notify(
+      `Simulated Workday Transfer for ${targetWorker.name}: ${addedReqs.length} California requirement(s) triggered.`,
+      'success'
+    );
+    return { ok: true, message: 'Transfer simulated.' };
+  };
+
+  const runConnectorSync = async (connectorId: string) => {
+    const check = can('TRIGGER_WORKDAY_SYNC');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
+    const now = nowTimestampUtc();
+    const target = connectors.find((c) => c.id === connectorId);
+    const tx: SyncTransaction = {
+      id: `TX-IN-${Date.now().toString().slice(-5)}`,
+      idempotencyKey: `idemp-inbound-${connectorId}-${Date.now()}`,
+      connectorId,
+      connectorName: target?.name || 'Workday HCM (Demo Adapter)',
+      direction: 'Inbound (Workday -> Readiness)',
+      timestamp: now,
+      recordsProcessed: workers.length,
+      recordsFailed: 0,
+      status: 'ACKNOWLEDGED',
+      httpStatus: 200,
+      acknowledgedAt: now,
+      retryCount: 0
+    };
+    setSyncTransactions((prev) => [tx, ...prev]);
+    setConnectors((prev) =>
+      prev.map((c) =>
+        c.id === connectorId
+          ? { ...c, status: 'Connected (Simulated)', lastSyncTimestamp: now }
+          : c
+      )
+    );
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'RUN_SIMULATED_CONNECTOR_SYNC',
+      category: 'WORKDAY_SYNC',
+      source: target?.name || connectorId,
+      targetEntityId: tx.id,
+      details: `Simulated inbound sync completed (${workers.length} sample workers refreshed).`
+    });
+    notify(`Simulated sync completed for ${target?.name || connectorId}.`, 'success');
+  };
+
+  const updateConnectorStatus = (connectorId: string, status: Connector['status']) => {
+    setConnectors((prev) => prev.map((c) => (c.id === connectorId ? { ...c, status } : c)));
+  };
+
+  const updateRoiAssumptions = (next: Partial<ROIModelAssumption>) => {
+    setRoiAssumptions((prev) => ({ ...prev, ...next }));
+  };
+
+  // Scenario Launcher (Scenarios 1–6)
+  const launchDemoScenario = (scenarioId: DemoScenarioId) => {
+    setActiveScenarioId(scenarioId);
+    switch (scenarioId) {
+      case 'scenario_1_expired_pharmacist':
+        setActiveRoleId('hr_ops_maya');
+        setSelectedWorkerId('EMP-10419');
+        setSelectedCaseId('CASE-9021');
+        setCurrentScreen('employees');
+        notify('Scenario 1: Daniel Kim expired CA Pharmacist license (#RPH-84920).', 'info');
+        break;
+      case 'scenario_2_newhire_nurse':
+        setActiveRoleId('hr_ops_maya');
+        setSelectedWorkerId('EMP-10510');
+        setSelectedCaseId('CASE-9040');
+        setCurrentScreen('employees');
+        notify('Scenario 2: Elena Alvarez Texas RN preboarding (starts in 7 days).', 'info');
+        break;
+      case 'scenario_3_suspended_license':
+        setActiveRoleId('cred_alex');
+        setSelectedWorkerId('EMP-10901');
+        setSelectedCaseId('CASE-9030');
+        setCurrentScreen('employees');
+        notify('Scenario 3: Marcus Vance restricted board status (PSV escalation).', 'info');
+        break;
+      case 'scenario_4_workday_retry':
+        setActiveRoleId('admin_priya');
+        setSelectedWorkerId('EMP-10922');
+        setSelectedCaseId('CASE-9062');
+        setCurrentScreen('integrations');
+        notify('Scenario 4: Hannah Abbott Workday HTTP 504 staging writeback retry.', 'info');
+        break;
+      case 'scenario_5_priya_policy_publish':
+        setActiveRoleId('admin_priya');
+        setCurrentScreen('rule_test_lab');
+        notify('Scenario 5: Priya Rule Test Lab (FIX-05 failing draft -> fix -> Alex approval).', 'info');
+        break;
+      case 'scenario_6_david_executive':
+        setActiveRoleId('chro_david');
+        setCurrentScreen('executive_overview');
+        notify('Scenario 6: David Miller Executive Readiness & Business Value.', 'info');
+        break;
     }
   };
 
-  // HERO ACTION 4: Trigger simulated HRMS metadata writeback to Workday Mirror
-  const triggerHRMSWriteback = async (caseId: string, simulateFailure = false): Promise<boolean> => {
-    const targetCase = complianceCases.find(c => c.id === caseId);
-    if (!targetCase) return false;
-
-    // Step 1: Set Case HRMS status to SYNCING
-    setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-      ...c,
-      hrmsSyncStatus: 'SYNCING'
-    } : c));
-
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-
-        if (simulateFailure) {
-          // Failure path
-          setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-            ...c,
-            hrmsSyncStatus: 'FAILED',
-            lastHRMSTryTimestamp: timestamp,
-            lastHRMSError: 'Workday API Timeout (HTTP 504) - Gateway Timeout. Retry is available.'
-          } : c));
-
-          const failedRun: SyncRun = {
-            id: `SYNC-RUN-${Date.now().toString().slice(-4)}`,
-            connectorId: 'conn-workday',
-            connectorName: 'Workday HCM',
-            direction: 'Outbound (Approved Compliance -> HRMS)',
-            timestamp,
-            recordsFetched: 1,
-            recordsCreated: 0,
-            recordsUpdated: 0,
-            recordsFailed: 1,
-            durationMs: 1450,
-            status: 'FAILED',
-            errorMessage: 'Gateway Timeout while writing back compliance verification metadata to Workday worker record.',
-            idempotencyKey: `IDEMP-OUT-FAIL-${Date.now()}`
-          };
-          setSyncRuns(prev => [failedRun, ...prev]);
-
-          logAuditEvent({
-            actor: currentPersona.name,
-            actorRole: currentPersona.roleLabel,
-            action: 'OUTBOUND_HRMS_SYNC_FAILED',
-            category: 'HRMS_SYNC',
-            targetEntityId: caseId,
-            targetEntityType: 'Case',
-            details: `Simulated writeback failed for ${targetCase.employeeName}: Gateway Timeout (HTTP 504).`
-          });
-
-          resolve(false);
-        } else {
-          // Success path
-          setComplianceCases(prev => prev.map(c => c.id === caseId ? {
-            ...c,
-            hrmsSyncStatus: 'SYNCED',
-            lastHRMSTryTimestamp: timestamp,
-            lastHRMSError: undefined
-          } : c));
-
-          // Update Workday local mirror
-          setHrmsMirror(prev => ({
-            ...prev,
-            [targetCase.employeeId]: {
-              employeeId: targetCase.employeeId,
-              workerName: targetCase.employeeName,
-              jobProfile: targetCase.role,
-              department: targetCase.department,
-              location: targetCase.location,
-              workerStatus: 'Active',
-              complianceStatus: 'VERIFIED_COMPLIANT',
-              licenseNumber: 'RPH-84920',
-              licenseExpiration: '2028-09-15',
-              auditVerified: true,
-              lastVerifiedBy: `${currentPersona.name} (${currentPersona.roleLabel})`,
-              lastVerifiedAt: timestamp,
-              lastSyncTimestamp: timestamp
-            }
-          }));
-
-          const successRun: SyncRun = {
-            id: `SYNC-RUN-${Date.now().toString().slice(-4)}`,
-            connectorId: 'conn-workday',
-            connectorName: 'Workday HCM',
-            direction: 'Outbound (Approved Compliance -> HRMS)',
-            timestamp,
-            recordsFetched: 1,
-            recordsCreated: 0,
-            recordsUpdated: 1,
-            recordsFailed: 0,
-            durationMs: 780,
-            status: 'SUCCESS',
-            idempotencyKey: `IDEMP-OUT-SUCC-${Date.now()}`
-          };
-          setSyncRuns(prev => [successRun, ...prev]);
-
-          logAuditEvent({
-            actor: currentPersona.name,
-            actorRole: currentPersona.roleLabel,
-            action: 'OUTBOUND_HRMS_SYNC_SUCCESS',
-            category: 'HRMS_SYNC',
-            targetEntityId: caseId,
-            targetEntityType: 'Case',
-            details: `Successfully wrote back verified compliance metadata for ${targetCase.employeeName} to Workday HCM. Mirror record updated with unexpired date (2028-09-15) and audit timestamp.`
-          });
-
-          resolve(true);
-        }
-      }, 950);
-    });
-  };
-
-  // Retry failed sync
-  const retryFailedSync = (syncRunId: string) => {
-    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-    setSyncRuns(prev => prev.map(sr => sr.id === syncRunId ? {
-      ...sr,
-      status: 'SUCCESS',
-      errorMessage: undefined,
-      recordsUpdated: 1,
-      recordsFailed: 0,
-      timestamp
-    } : sr));
-
-    setComplianceCases(prev => prev.map(c => c.hrmsSyncStatus === 'FAILED' ? {
-      ...c,
-      hrmsSyncStatus: 'SYNCED',
-      lastHRMSError: undefined,
-      lastHRMSTryTimestamp: timestamp
-    } : c));
-
-    // Update mirror
-    setHrmsMirror(prev => {
-      const updated = { ...prev };
-      if (updated['EMP-10419']) {
-        updated['EMP-10419'] = {
-          ...updated['EMP-10419'],
-          complianceStatus: 'VERIFIED_COMPLIANT',
-          licenseExpiration: '2028-09-15',
-          auditVerified: true,
-          lastVerifiedBy: `${currentPersona.name}`,
-          lastVerifiedAt: timestamp,
-          lastSyncTimestamp: timestamp
-        };
-      }
-      return updated;
-    });
-
-    logAuditEvent({
-      actor: currentPersona.name,
-      actorRole: currentPersona.roleLabel,
-      action: 'RETRY_HRMS_SYNC_SUCCESS',
-      category: 'HRMS_SYNC',
-      targetEntityId: syncRunId,
-      targetEntityType: 'Connector',
-      details: `Retried failed outbound sync run ${syncRunId}. Successfully wrote back compliance metadata to Workday HCM.`
-    });
-  };
-
-  // Update business assumptions
-  const updateAssumptions = (newAssumptions: Partial<BusinessValueAssumptions>) => {
-    setAssumptions(prev => ({ ...prev, ...newAssumptions }));
-  };
-
-  // Dynamic Metrics derived directly from live state
+  // Computed metrics strictly from live normalized state
   const computedMetrics = useMemo(() => {
-    const totalMonitored = employees.length;
-    const openCases = complianceCases.filter(c => c.status !== 'GREEN_RESOLVED');
-    const openCasesCount = openCases.length;
-    const criticalCasesCount = openCases.filter(c => c.severity === 'Critical').length;
-    const overdueCount = openCases.filter(c => c.slaStatus === 'Overdue').length;
-    const awaitingEmployeeCount = complianceCases.filter(c => c.status === 'AMBER_AWAITING_EMPLOYEE').length;
-    const needsReviewCount = complianceCases.filter(c => c.status === 'AMBER_NEEDS_HR_REVIEW').length;
-    const verifiedCompleteCount = employees.filter(e => e.healthStatus === 'Complete').length;
-    const northStarAuditReadyPercent = Math.round((verifiedCompleteCount / Math.max(1, totalMonitored)) * 100);
+    const sampleWorkersCount = workers.length;
+    const totalApplicableRequirements = requirements.filter(
+      (r) => r.applicabilityOutcome !== 'NOT_APPLICABLE'
+    ).length;
+    const openCases = cases.filter((c) => c.workflowState !== 'resolved');
+    const resolvedCases = cases.filter((c) => c.workflowState === 'resolved');
+    const criticalCasesCount = openCases.filter((c) => c.severity === 'Critical').length;
+    const clinicalEscalationsPending = openCases.filter(
+      (c) =>
+        c.clinicalEligibilityState === 'REVIEW_REQUIRED' ||
+        c.escalation?.status === 'PENDING_REVIEW'
+    ).length;
+    const awaitingEmployeeCount = openCases.filter(
+      (c) => c.workflowState === 'evidence_requested'
+    ).length;
+    const pendingPSVCount = openCases.filter(
+      (c) =>
+        c.verificationState === 'PENDING_SOURCE_CHECK' ||
+        c.verificationState === 'VERIFICATION_FAILED' ||
+        c.verificationState === 'RESTRICTED'
+    ).length;
+    const needsReviewCount = openCases.filter(
+      (c) => c.documentState === 'REVIEW_REQUIRED' || c.workflowState === 'authorized_review'
+    ).length;
+    const syncFailedCount = syncTransactions.filter((t) => t.status === 'FAILED').length;
 
-    const resolvedCasesCount = complianceCases.filter(c => c.status === 'GREEN_RESOLVED').length;
-    const minutesSavedPerCase = Math.max(0, assumptions.baselineManualMinutesPerCase - assumptions.assistedMinutesPerCase);
-    const totalMinutesSaved = resolvedCasesCount * minutesSavedPerCase;
-    const estimatedLaborValueSaved = Math.round((totalMinutesSaved / 60) * assumptions.loadedHrHourlyRate);
+    const readinessValues = Object.values(workerReadinessMap);
+    const readyWorkersCount = readinessValues.filter((r) => r.overallStatus === 'READY').length;
+    const sampleReadinessPercent = Math.round(
+      (readyWorkersCount / Math.max(1, sampleWorkersCount)) * 100
+    );
 
-    // Annualized net ROI projection from pilot assumptions
-    const projectedMonthlyMinutesSaved = assumptions.averageMonthlyCases * minutesSavedPerCase;
-    const projectedAnnualLaborSaved = (projectedMonthlyMinutesSaved / 60) * assumptions.loadedHrHourlyRate * 12;
-    const annualizedNetROI = Math.round(projectedAnnualLaborSaved - assumptions.annualSubscriptionCost - assumptions.annualizedImplementationCost);
+    const minutesSavedPerCase = Math.max(
+      0,
+      roiAssumptions.baselineManualMinutesPerCase - roiAssumptions.assistedMinutesPerCase
+    );
+    const modeledMonthlyHoursSaved = Math.round(
+      (roiAssumptions.monthlyExceptionVolume * minutesSavedPerCase) / 60
+    );
+    const modeledAnnualCapacityValue = Math.round(
+      modeledMonthlyHoursSaved * 12 * roiAssumptions.loadedHrHourlyRate
+    );
+    const modeledAnnualCashRealizable = Math.round(
+      modeledAnnualCapacityValue * roiAssumptions.capacityToCashRealizationFactor
+    );
+    const totalAnnualCost =
+      roiAssumptions.annualSoftwareSubscriptionCost +
+      roiAssumptions.annualImplementationAndIntegrationCost;
+    const modeledAnnualNetValue = modeledAnnualCashRealizable - totalAnnualCost;
 
     return {
-      totalMonitored,
-      openCasesCount,
+      sampleWorkersCount,
+      enterpriseHeadcountContext: organization.enterpriseHeadcountContext,
+      totalApplicableRequirements,
+      openCasesCount: openCases.length,
       criticalCasesCount,
-      overdueCount,
+      clinicalEscalationsPending,
       awaitingEmployeeCount,
+      pendingPSVCount,
       needsReviewCount,
-      verifiedCompleteCount,
-      northStarAuditReadyPercent,
-      totalMinutesSaved,
-      estimatedLaborValueSaved,
-      annualizedNetROI
+      syncFailedCount,
+      readyWorkersCount,
+      sampleReadinessPercent,
+      resolvedCasesCount: resolvedCases.length,
+      modeledMonthlyHoursSaved,
+      modeledAnnualCapacityValue,
+      modeledAnnualCashRealizable,
+      modeledAnnualNetValue
     };
-  }, [employees, complianceCases, assumptions]);
+  }, [
+    workers,
+    requirements,
+    cases,
+    syncTransactions,
+    workerReadinessMap,
+    roiAssumptions,
+    organization.enterpriseHeadcountContext
+  ]);
 
-  // Kill Switch
+  // Kill Switch & Admin Compatibility
   const triggerKillSwitch = (reason: string) => {
+    const check = can('TRIGGER_KILL_SWITCH');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
     setKillSwitchState({
       isTriggered: true,
       agentId: 'all-agents',
-      stoppedAt: new Date().toLocaleTimeString() + ' (Just now)',
+      stoppedAt: nowTimestampUtc(),
       stoppedBy: currentPersona.name,
       reason
     });
-    setAgents(prev => prev.map(a => ({ ...a, status: 'Paused' })));
+    setAgents((prev) => prev.map((a) => ({ ...a, status: 'Paused' })));
     setIsKillSwitchModalOpen(false);
-
     logAuditEvent({
       actor: currentPersona.name,
       actorRole: currentPersona.roleLabel,
       action: 'TRIGGER_EMERGENCY_KILL_SWITCH',
       category: 'KILL_SWITCH',
+      source: 'AI Governance Guardrails',
       targetEntityId: 'ALL_AGENTS',
-      targetEntityType: 'Agent',
-      details: `Emergency stop initiated by ${currentPersona.name}: "${reason}". All agent background operations paused.`
+      details: `Emergency stop triggered: "${reason}". Automated outreach & agent recommendations paused.`
     });
+    notify('Emergency Kill Switch activated. Automated outreach paused.', 'error');
   };
 
   const resumeAgentFromKillSwitch = () => {
+    const check = can('TRIGGER_KILL_SWITCH');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
     setKillSwitchState({ isTriggered: false });
-    setAgents(prev => prev.map(a => ({ ...a, status: 'Healthy' })));
-
+    setAgents((prev) => prev.map((a) => ({ ...a, status: 'Healthy' })));
     logAuditEvent({
       actor: currentPersona.name,
       actorRole: currentPersona.roleLabel,
-      action: 'RESUME_AGENTS_FROM_KILL_SWITCH',
+      action: 'RESUME_FROM_KILL_SWITCH',
       category: 'KILL_SWITCH',
+      source: 'AI Governance Guardrails',
       targetEntityId: 'ALL_AGENTS',
-      targetEntityType: 'Agent',
-      details: `Emergency stop lifted by ${currentPersona.name}. Resumed normal operational telemetry.`
+      details: 'Emergency stop cleared by Compliance Administrator.'
     });
+    notify('Compliance automation resumed.', 'success');
   };
 
-  // Reset demo state back to pristine seed
+  const rollbackToVersion = (version: string) => {
+    rollbackRuleVersion('RULE-CA-PHARM-01', version);
+    setIsRollbackModalOpen(false);
+  };
+
+  const runSandboxTest = () => {
+    setIsSandboxRunning(true);
+    setSandboxTestResult('running');
+    setTimeout(() => {
+      runDraftRuleTestLab('RULE-CA-PHARM-DRAFT');
+      setIsSandboxRunning(false);
+      setSandboxTestResult('completed');
+    }, 350);
+  };
+
+  // Full deterministic Reset Demo Data
   const resetDemoData = () => {
+    Object.values(previewsRef.current).forEach((p) => {
+      try {
+        URL.revokeObjectURL(p.objectUrl);
+      } catch {
+        // ignore
+      }
+    });
+    setUploadedFilePreviews({});
     localStorage.removeItem(LOCAL_STORAGE_KEY);
+
     setActiveRoleId('hr_ops_maya');
     setCurrentScreen('weekly_overview');
-    setCurrentEnvironment('Production');
+    setActiveScenarioId(null);
     setOrganization(INITIAL_ORGANIZATION);
+    setWorkers(INITIAL_WORKERS);
+    setAssignments(INITIAL_ASSIGNMENTS);
+    setSelectedWorkerId('EMP-10419');
     setPolicies(INITIAL_POLICIES);
     setRules(INITIAL_RULES);
-    setRuleVersions(INITIAL_RULE_VERSIONS);
-    setEvalFixtures(INITIAL_EVAL_FIXTURES);
-    setEvalRuns([INITIAL_EVAL_RUN]);
-    setEmployees(MOCK_EMPLOYEES);
-    setSelectedEmployeeId('EMP-10419');
-    setComplianceCases(INITIAL_COMPLIANCE_CASES);
+    setPolicyVersions(INITIAL_POLICY_VERSIONS);
+    const draftRule = INITIAL_RULES.find((r) => r.id === 'RULE-CA-PHARM-DRAFT');
+    setTestRuns(
+      draftRule ? [runRuleEvaluation(draftRule, INITIAL_EVAL_FIXTURES, DEMO_REFERENCE_DATE)] : []
+    );
+    setRequirements(INITIAL_REQUIREMENTS);
+    setEvidenceItems(INITIAL_EVIDENCE_ITEMS);
+    setVerifications(INITIAL_VERIFICATIONS);
+    setCases(INITIAL_COMPLIANCE_CASES);
     setSelectedCaseId('CASE-9021');
-    setRemediationTasks(INITIAL_REMEDIATION_TASKS);
-    setMessageThreads(INITIAL_MESSAGE_THREADS);
+    setTasks(INITIAL_REMEDIATION_TASKS);
+    setThreads(INITIAL_COMMUNICATION_THREADS);
     setConnectors(INITIAL_CONNECTORS);
-    setFieldMappings(INITIAL_FIELD_MAPPINGS);
-    setSyncRuns(INITIAL_SYNC_RUNS);
+    setSyncTransactions(INITIAL_SYNC_TRANSACTIONS);
     setHrmsMirror(INITIAL_HRMS_MIRROR);
-    setAuditEvents(INITIAL_AUDIT_LOGS);
-    setAssumptions(INITIAL_ASSUMPTIONS);
+    setAuditEvents(INITIAL_AUDIT_EVENTS);
+    setRoiAssumptions(INITIAL_ROI_ASSUMPTIONS);
     setKillSwitchState({ isTriggered: false });
     setAgents(ADMIN_AGENTS);
     setIsEmployeePortalOpen(false);
     setIsHRMSSyncPayloadModalOpen(false);
+    notify('Demo dataset reset to reproducible baseline (As of 2026-11-12).', 'info');
   };
 
   return (
-    <AppContext.Provider value={{
-      activeRoleId,
-      currentPersona,
-      switchRole,
-      currentScreen,
-      setCurrentScreen,
-      currentEnvironment,
-      setCurrentEnvironment,
-      isWelcomeModalOpen,
-      setIsWelcomeModalOpen,
-      organization,
-      updateOrganization,
-      policies,
-      addPolicy,
-      rules,
-      ruleVersions,
-      evalFixtures,
-      evalRuns,
-      updateRule,
-      runRuleEvalSandbox,
-      publishRuleVersion,
-      rollbackRuleVersion,
-      employees,
-      selectedEmployeeId,
-      setSelectedEmployeeId,
-      selectedEmployee,
-      complianceCases,
-      selectedCaseId,
-      setSelectedCaseId,
-      selectedCase,
-      remediationTasks,
-      messageThreads,
-      approveAndSendRemediation,
-      simulateEmployeeUpload,
-      reviewEvidenceAndResolve,
-      triggerHRMSWriteback,
-      retryFailedSync,
-      isEmployeePortalOpen,
-      setIsEmployeePortalOpen,
-      isHRMSSyncPayloadModalOpen,
-      setIsHRMSSyncPayloadModalOpen,
-      connectors,
-      fieldMappings,
-      syncRuns,
-      hrmsMirror,
-      runConnectorSync,
-      updateConnectorStatus,
-      auditEvents,
-      logAuditEvent,
-      assumptions,
-      updateAssumptions,
-      computedMetrics,
-      agents,
-      selectedAgentId,
-      setSelectedAgentId,
-      selectedAgent,
-      complianceAgentAutonomy,
-      setComplianceAgentAutonomy,
-      killSwitchState,
-      isKillSwitchModalOpen,
-      setIsKillSwitchModalOpen,
-      triggerKillSwitch,
-      resumeAgentFromKillSwitch,
-      traces,
-      selectedTrace,
-      setSelectedTrace,
-      isTraceModalOpen,
-      setIsTraceModalOpen,
-      evalCases,
-      selectedEvalCase,
-      setSelectedEvalCase,
-      isEvalModalOpen,
-      setIsEvalModalOpen,
-      workflowNodes,
-      selectedWorkflowNode,
-      setSelectedWorkflowNode,
-      isWorkflowDrawerOpen,
-      setIsWorkflowDrawerOpen,
-      versions,
-      resetDemoData,
-      dataSources,
-      toggleDataSource,
-      isRollbackModalOpen,
-      setIsRollbackModalOpen,
-      rollbackToVersion,
-      releaseGateApproved,
-      setReleaseGateApproved,
-      isSandboxRunning,
-      sandboxTestResult,
-      runSandboxTest,
-      demoStep,
-      jumpToDemoStep,
-      resetDemoState
-    }}>
+    <AppContext.Provider
+      value={{
+        activeRoleId,
+        currentPersona,
+        switchRole,
+        can,
+        currentScreen,
+        setCurrentScreen,
+        currentEnvironment,
+        setCurrentEnvironment,
+        isWelcomeModalOpen,
+        setIsWelcomeModalOpen,
+        isDemoGuideOpen,
+        setIsDemoGuideOpen,
+        isMobileSidebarOpen,
+        setIsMobileSidebarOpen,
+        activeScenarioId,
+        launchDemoScenario,
+        toasts,
+        notify,
+        dismissToast,
+        organization,
+        updateOrganization,
+        facilities,
+        departments,
+        workers,
+        assignments,
+        workerReadinessMap,
+        selectedWorkerId,
+        setSelectedWorkerId,
+        selectedWorker,
+        openWorkerDossier,
+        policies,
+        addPolicyDocument,
+        rules,
+        policyVersions,
+        testFixtures,
+        testRuns,
+        updateDraftRule,
+        runDraftRuleTestLab,
+        submitRuleForApproval,
+        approveAndPublishRule,
+        rollbackRuleVersion,
+        requirements,
+        evidenceItems,
+        verifications,
+        cases,
+        selectedCaseId,
+        setSelectedCaseId,
+        selectedCase,
+        tasks,
+        threads,
+        uploadedFilePreviews,
+        approveAndSendOutreach,
+        submitEmployeePortalResponse,
+        runPrimarySourceVerification,
+        recordClinicalEligibilityDecision,
+        reviewAndCloseCase,
+        completeNonPSVRequirement,
+        connectors,
+        fieldMappings,
+        syncTransactions,
+        hrmsMirror,
+        queueAndSyncWorkdayStaging,
+        retrySyncTransaction,
+        simulateWorkdayWorkerEvent,
+        runConnectorSync,
+        updateConnectorStatus,
+        isEmployeePortalOpen,
+        setIsEmployeePortalOpen,
+        isHRMSSyncPayloadModalOpen,
+        setIsHRMSSyncPayloadModalOpen,
+        auditEvents,
+        logAuditEvent,
+        roiAssumptions,
+        updateRoiAssumptions,
+        computedMetrics,
+        resetDemoData,
+        agents,
+        selectedAgentId,
+        setSelectedAgentId,
+        selectedAgent,
+        complianceAgentAutonomy,
+        setComplianceAgentAutonomy,
+        killSwitchState,
+        isKillSwitchModalOpen,
+        setIsKillSwitchModalOpen,
+        triggerKillSwitch,
+        resumeAgentFromKillSwitch,
+        traces,
+        selectedTrace,
+        setSelectedTrace,
+        isTraceModalOpen,
+        setIsTraceModalOpen,
+        evalCases,
+        selectedEvalCase,
+        setSelectedEvalCase,
+        isEvalModalOpen,
+        setIsEvalModalOpen,
+        workflowNodes,
+        selectedWorkflowNode,
+        setSelectedWorkflowNode,
+        isWorkflowDrawerOpen,
+        setIsWorkflowDrawerOpen,
+        versions,
+        dataSources,
+        toggleDataSource,
+        isRollbackModalOpen,
+        setIsRollbackModalOpen,
+        rollbackToVersion,
+        releaseGateApproved,
+        setReleaseGateApproved,
+        isSandboxRunning,
+        sandboxTestResult,
+        runSandboxTest
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

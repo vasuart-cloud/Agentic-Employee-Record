@@ -6,7 +6,8 @@ export const EvalFailureModal: React.FC = () => {
   const { 
     selectedEvalCase, 
     isEvalModalOpen, 
-    setIsEvalModalOpen 
+    setIsEvalModalOpen,
+    notify
   } = useApp();
 
   if (!isEvalModalOpen || !selectedEvalCase) return null;
@@ -94,7 +95,7 @@ export const EvalFailureModal: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => alert('Assigned to Compliance AI Team (Priya Sharma).')}
+              onClick={() => notify('Assigned to Compliance Admin (Priya Sharma).', 'info')}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1.5"
             >
               <UserCheck className="w-3.5 h-3.5" />
@@ -102,7 +103,7 @@ export const EvalFailureModal: React.FC = () => {
             </button>
 
             <button
-              onClick={() => alert('Draft fix created: Updated prompt lookup table threshold.')}
+              onClick={() => notify('Draft fix created in Rule Test Lab.', 'info')}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1.5"
             >
               <Wrench className="w-3.5 h-3.5" />
@@ -111,7 +112,7 @@ export const EvalFailureModal: React.FC = () => {
 
             <button
               onClick={() => {
-                alert('Retesting case against draft candidate agent... PASSED!');
+                notify('Retested case against candidate rule in sandbox.', 'success');
                 setIsEvalModalOpen(false);
               }}
               className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-xs"
