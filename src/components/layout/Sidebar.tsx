@@ -1,247 +1,109 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { NavigationScreen, UserRoleId } from '../../types';
-import {
-  LayoutDashboard,
-  Users,
-  AlertTriangle,
-  MessageSquare,
-  CheckSquare,
-  FileCheck2,
-  BarChart3,
-  BookOpen,
-  Sliders,
-  FlaskConical,
-  GitBranch,
-  BadgeCheck,
-  Bot,
-  Database,
-  Shield,
-  Building2,
-  MapPin,
-  TrendingUp,
-  Calculator,
-  ClipboardCheck,
-  X
-} from 'lucide-react';
+import { House, ClipboardList, Users, ShieldCheck, BookOpen, Database, Building2, TrendingUp, Calculator, BadgeCheck, FileCheck2, Settings2, ChevronDown, ChevronRight, X, ArrowRight } from 'lucide-react';
 
-interface NavItem {
-  id: NavigationScreen;
-  label: string;
-  icon: React.FC<{ className?: string }>;
-  badge?: number;
-}
+type MenuItem = { id: NavigationScreen; label: string; icon: React.ComponentType<{ className?: string }>; description?: string };
+
+const simpleMenus: Record<UserRoleId, MenuItem[]> = {
+  hr_ops_maya: [
+    { id:'weekly_overview', label:'My work queue', icon:ClipboardList, description:'What needs action today' },
+    { id:'compliance_cases', label:'Cases to resolve', icon:ShieldCheck, description:'Open issues & owners' },
+    { id:'employees', label:'Employee records', icon:Users, description:'Evidence & verification' }
+  ],
+  admin_priya: [
+    { id:'admin_onboarding',label:'Set up compliance',icon:ShieldCheck,description:'Start here · 5 guided steps' },
+    { id:'policy_library',label:'Policies & rules',icon:BookOpen,description:'Sources, rules and test lab' },
+    { id:'integrations',label:'Data connections',icon:Database,description:'Workday & repositories' }
+  ],
+  chro_david: [
+    { id:'executive_overview',label:'Workforce overview',icon:Building2,description:'Readiness & risk' },
+    { id:'risk_by_facility',label:'Risk by facility',icon:TrendingUp,description:'Where attention is needed' },
+    { id:'business_value',label:'Business value',icon:Calculator,description:'Transparent pilot assumptions' }
+  ],
+  cred_alex: [
+    { id:'credential_verification',label:'Verify credentials',icon:BadgeCheck,description:'Primary-source checks' },
+    { id:'employees',label:'Employee dossiers',icon:Users,description:'Review evidence' },
+    { id:'rule_versions',label:'Approve rules',icon:FileCheck2,description:'Independent sign-off' }
+  ]
+};
+
+const advanced: Partial<Record<UserRoleId, MenuItem[]>> = {
+  hr_ops_maya: [
+    {id:'employee_requests',label:'Employee messages',icon:ClipboardList},
+    {id:'audit_packets',label:'Audit packets',icon:FileCheck2},
+    {id:'analytics',label:'Operations analytics',icon:TrendingUp},
+    {id:'integrations',label:'Sync history',icon:Database}
+  ],
+  admin_priya: [
+    {id:'rule_builder',label:'Detailed rule editor',icon:Settings2},
+    {id:'rule_test_lab',label:'Test results',icon:ClipboardList},
+    {id:'rule_versions',label:'Version history',icon:FileCheck2},
+    {id:'credential_verification',label:'Credential queue',icon:BadgeCheck},
+    {id:'ai_governance',label:'AI governance',icon:ShieldCheck},
+    {id:'audit_access',label:'Audit & access',icon:FileCheck2}
+  ],
+  chro_david: [
+    {id:'readiness_trends',label:'Readiness trends',icon:TrendingUp},
+    {id:'pilot_scorecard',label:'Pilot scorecard',icon:ClipboardList}
+  ],
+  cred_alex: [
+    {id:'compliance_cases',label:'Exceptions',icon:ShieldCheck},
+    {id:'audit_packets',label:'Evidence packets',icon:FileCheck2}
+  ]
+};
 
 export const Sidebar: React.FC = () => {
-  const {
-    activeRoleId,
-    currentScreen,
-    setCurrentScreen,
-    computedMetrics,
-    isMobileSidebarOpen,
-    setIsMobileSidebarOpen,
-    organization
-  } = useApp();
-
-  const menusByRole: Record<UserRoleId, { sectionLabel: string; items: NavItem[] }[]> = {
-    hr_ops_maya: [
-      {
-        sectionLabel: 'HR Operations',
-        items: [
-          { id: 'weekly_overview', label: 'Weekly Work Queue', icon: LayoutDashboard },
-          { id: 'employees', label: 'Employees & Credentials', icon: Users },
-          {
-            id: 'compliance_cases',
-            label: 'Cases & Escalations',
-            icon: AlertTriangle,
-            badge: computedMetrics.openCasesCount
-          },
-          {
-            id: 'employee_requests',
-            label: 'Employee Requests',
-            icon: MessageSquare,
-            badge: computedMetrics.awaitingEmployeeCount
-          },
-          { id: 'tasks', label: 'Tasks & Follow-ups', icon: CheckSquare },
-          { id: 'audit_packets', label: 'Evidence & Audit Packets', icon: FileCheck2 },
-          { id: 'analytics', label: 'Operations Analytics', icon: BarChart3 }
-        ]
-      }
-    ],
-    admin_priya: [
-      {
-        sectionLabel: 'Policy & Rule Governance',
-        items: [
-          { id: 'policy_library', label: 'Policy Library', icon: BookOpen },
-          { id: 'rule_builder', label: 'Rule Builder', icon: Sliders },
-          { id: 'rule_test_lab', label: 'Test Lab', icon: FlaskConical },
-          { id: 'rule_versions', label: 'Rule Versions & Approvals', icon: GitBranch }
-        ]
-      },
-      {
-        sectionLabel: 'Verification & Platform',
-        items: [
-          {
-            id: 'credential_verification',
-            label: 'Credential Verification',
-            icon: BadgeCheck,
-            badge: computedMetrics.pendingPSVCount
-          },
-          { id: 'ai_governance', label: 'AI Governance', icon: Bot },
-          {
-            id: 'integrations',
-            label: 'Integrations & Data Mapping',
-            icon: Database,
-            badge: computedMetrics.syncFailedCount
-          },
-          { id: 'audit_access', label: 'Audit & Access', icon: Shield }
-        ]
-      }
-    ],
-    chro_david: [
-      {
-        sectionLabel: 'Executive Insights',
-        items: [
-          { id: 'executive_overview', label: 'Executive Overview', icon: Building2 },
-          { id: 'risk_by_facility', label: 'Risk by Facility', icon: MapPin },
-          { id: 'readiness_trends', label: 'Readiness Trends', icon: TrendingUp },
-          { id: 'business_value', label: 'Business Value', icon: Calculator },
-          { id: 'pilot_scorecard', label: 'Pilot Scorecard', icon: ClipboardCheck }
-        ]
-      }
-    ],
-    cred_alex: [
-      {
-        sectionLabel: 'Credentialing & Approvals',
-        items: [
-          {
-            id: 'credential_verification',
-            label: 'Credential Verification Queue',
-            icon: BadgeCheck,
-            badge: computedMetrics.pendingPSVCount
-          },
-          {
-            id: 'compliance_cases',
-            label: 'Cases & Escalations',
-            icon: AlertTriangle,
-            badge: computedMetrics.clinicalEscalationsPending
-          },
-          { id: 'employees', label: 'Employees & Credentials', icon: Users },
-          { id: 'rule_versions', label: 'Pending Rule Sign-Off', icon: GitBranch },
-          { id: 'audit_packets', label: 'Evidence & Audit Packets', icon: FileCheck2 }
-        ]
-      }
-    ]
+  const { activeRoleId, currentScreen, setCurrentScreen, isMobileSidebarOpen, setIsMobileSidebarOpen, currentPersona } = useApp();
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const navigate = (id: NavigationScreen) => {setCurrentScreen(id);setIsMobileSidebarOpen(false);};
+  const renderItem = (item: MenuItem, compact=false) => {
+    const Icon = item.icon;
+    const current = currentScreen === item.id || (item.id==='employees' && currentScreen==='employee_records');
+    return (
+      <button key={item.id} type="button" onClick={()=>navigate(item.id)} aria-current={current?'page':undefined}
+        className={`w-full text-left rounded-xl px-3 py-2.5 flex items-center gap-3 transition-colors ${current?'bg-teal-50 border border-teal-200 text-teal-950':'hover:bg-slate-50 border border-transparent text-slate-700'}`}>
+        <Icon className={`w-4 h-4 shrink-0 ${current?'text-teal-700':'text-slate-500'}`}/>
+        <span className="min-w-0 flex-1">
+          <span className={`block text-sm ${current?'font-semibold':'font-medium'}`}>{item.label}</span>
+          {!compact && item.description && <span className="block text-[11px] text-slate-500 mt-0.5">{item.description}</span>}
+        </span>
+        {current && <ChevronRight className="w-4 h-4 text-teal-700 shrink-0"/>}
+      </button>
+    );
   };
-
-  const sections = menusByRole[activeRoleId] || menusByRole.hr_ops_maya;
-
-  const isItemActive = (itemId: NavigationScreen) => {
-    if (currentScreen === itemId) return true;
-    if (itemId === 'employees' && currentScreen === 'employee_records') return true;
-    if (itemId === 'audit_access' && (currentScreen === 'audit_logs' || currentScreen === 'users_roles'))
-      return true;
-    if (
-      itemId === 'ai_governance' &&
-      ['command_center', 'agents', 'agent_detail', 'agent_workflows', 'evals', 'observability', 'guardrails'].includes(
-        currentScreen
-      )
-    )
-      return true;
-    return false;
-  };
-
-  const navContent = (
-    <div className="flex flex-col h-full bg-white border-r border-slate-200 w-64 shrink-0">
-      <div className="lg:hidden px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-900">Navigation</span>
-        <button
-          onClick={() => setIsMobileSidebarOpen(false)}
-          className="p-1 text-slate-500 hover:text-slate-700"
-          aria-label="Close navigation"
-        >
-          <X className="w-4 h-4" />
+  const nav=(
+    <div className="bg-white h-full border-r border-slate-200 w-64 flex flex-col">
+      <div className="p-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Explore the product</div>
+        <button className="lg:hidden text-slate-500" onClick={()=>setIsMobileSidebarOpen(false)} aria-label="Close navigation"><X className="w-5 h-5"/></button>
+      </div>
+      <div className="px-3 pt-3">
+        <button onClick={()=>navigate('demo_home')} className={`w-full flex gap-2 items-center rounded-xl px-3 py-3 text-sm font-semibold ${currentScreen==='demo_home'?'bg-teal-700 text-white':'bg-slate-900 text-white hover:bg-slate-800'}`}>
+          <House className="w-4 h-4"/> All 3 demo stories <ArrowRight className="w-4 h-4 ml-auto"/>
         </button>
       </div>
-
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-        {sections.map((section) => (
-          <div key={section.sectionLabel}>
-            <div className="px-2.5 mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              {section.sectionLabel}
-            </div>
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const active = isItemActive(item.id);
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setCurrentScreen(item.id);
-                      setIsMobileSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      active
-                        ? 'bg-teal-50 text-teal-900 font-semibold border border-teal-200/80'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2.5 truncate">
-                      <Icon
-                        className={`w-4 h-4 shrink-0 ${
-                          active ? 'text-teal-700' : 'text-slate-400'
-                        }`}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    {typeof item.badge === 'number' && item.badge > 0 && (
-                      <span
-                        className={`ml-2 px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded tabular-nums ${
-                          active
-                            ? 'bg-teal-700 text-white'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <nav className="p-3 space-y-1 overflow-y-auto flex-1" aria-label="Main navigation">
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-3 py-3">{currentPersona.roleLabel}</div>
+        {simpleMenus[activeRoleId].map(item=>renderItem(item))}
+        <div className="pt-4">
+          <button onClick={()=>setShowAdvanced(v=>!v)} aria-expanded={showAdvanced}
+            className="flex items-center w-full gap-2 px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900">
+            <Settings2 className="w-4 h-4"/>
+            More tools
+            <ChevronDown className={`ml-auto w-4 h-4 transition-transform ${showAdvanced?'rotate-180':''}`}/>
+          </button>
+          {showAdvanced && <div className="space-y-1 pl-2">{(advanced[activeRoleId]||[]).map(item=>renderItem(item,true))}</div>}
+        </div>
       </nav>
-
-      {/* Honest Simulated Environment Footer */}
-      <div className="p-3 border-t border-slate-200 bg-slate-50/70 text-[11px] space-y-1.5">
-        <div className="font-semibold text-slate-800">Simulated Demo Environment</div>
-        <div className="text-slate-600 leading-relaxed">
-          Sample: <span className="font-mono font-semibold tabular-nums">{computedMetrics.sampleWorkersCount}</span> workers ·{' '}
-          <span className="font-mono font-semibold tabular-nums">{computedMetrics.totalApplicableRequirements}</span> requirements.
-          Enterprise context: {organization.enterpriseHeadcountContext.toLocaleString()}.
-        </div>
-        <div className="text-[10px] text-slate-500">
-          Workday &amp; licensing board adapters are simulated in browser.
-        </div>
+      <div className="p-4 bg-slate-50 border-t border-slate-200">
+        <div className="text-xs font-semibold text-slate-800">Synthetic demonstration</div>
+        <div className="text-[11px] text-slate-600 mt-1 leading-relaxed">Workday, licensing board and employee notifications use simulated adapters. No live employee data.</div>
       </div>
     </div>
   );
-
-  return (
-    <>
-      <aside className="hidden lg:block h-full shrink-0">{navContent}</aside>
-
-      {isMobileSidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          <div
-            className="fixed inset-0 bg-slate-900/50"
-            onClick={() => setIsMobileSidebarOpen(false)}
-          />
-          <div className="relative z-10 h-full">{navContent}</div>
-        </div>
-      )}
-    </>
-  );
+  return <>
+    <aside className="hidden lg:block shrink-0 h-full">{nav}</aside>
+    {isMobileSidebarOpen&&<div className="fixed inset-0 z-50 flex lg:hidden"><button aria-label="Dismiss navigation" onClick={()=>setIsMobileSidebarOpen(false)} className="absolute inset-0 bg-slate-950/60"/><div className="relative h-full">{nav}</div></div>}
+  </>;
 };
