@@ -6,33 +6,18 @@ import { X, ShieldAlert, Play, CheckCircle2, RotateCcw } from 'lucide-react';
 const GUIDE_SCENARIOS: { id: DemoScenarioId; label: string; detail: string }[] = [
   {
     id: 'scenario_1_expired_pharmacist',
-    label: 'Scenario 1: Expired CA Pharmacist (Daniel Kim)',
-    detail: 'Walk through Why-Flagged -> Maya Outreach -> Employee Portal Upload -> Alex PSV -> Partial Readiness (Amber while GCP training remains open) -> Full Ready -> Workday Staging Sync.'
-  },
-  {
-    id: 'scenario_2_newhire_nurse',
-    label: 'Scenario 2: Preboarding Texas RN (Elena Alvarez)',
-    detail: 'Starts 2026-11-19 (7 days out). Separates Administrative Onboarding % from Clinical Duty Eligibility.'
-  },
-  {
-    id: 'scenario_3_suspended_license',
-    label: 'Scenario 3: Restricted Board Status (Marcus Vance)',
-    detail: 'Negative PSV fixture blocks administrative closure and triggers clinical leadership escalation.'
-  },
-  {
-    id: 'scenario_4_workday_retry',
-    label: 'Scenario 4: Workday HTTP 504 Timeout & Scoped Retry (Hannah Abbott)',
-    detail: 'Retry failed outbound writeback TX-WD-9062 with idempotency key without altering master HR records.'
+    label: '1. Resolve an expired license (Maya + Alex)',
+    detail: 'Find Daniel Kim → explain issue → collect document → primary-source verification → resolve.'
   },
   {
     id: 'scenario_5_priya_policy_publish',
-    label: 'Scenario 5: Rule Test Lab Failure -> Fix -> Independent Sign-Off',
-    detail: 'Priya runs RULE-CA-PHARM-DRAFT (FIX-05 fails 11/12), enables out-of-state rejection (12/12), submits, and Alex approves.'
+    label: '2. Configure and test a rule (Priya + Alex)',
+    detail: '5-step admin setup → policy source → choose rule → failing test → correction → independent approval.'
   },
   {
     id: 'scenario_6_david_executive',
-    label: 'Scenario 6: Executive Facility Risk & Realizable Value (David)',
-    detail: 'Aggregate readiness across 4 facilities, sample vs enterprise denominators, and capacity vs cash ROI.'
+    label: '3. Review workforce risk and value (David)',
+    detail: 'Executive view → facility risk → onboarding readiness → modeled business value.'
   }
 ];
 

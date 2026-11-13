@@ -93,7 +93,7 @@ import {
   mockWorkdayAdapter
 } from '../integrations/MockWorkdayAdapter';
 
-const LOCAL_STORAGE_KEY = 'agentic_records_healthcare_demo_v3';
+const LOCAL_STORAGE_KEY = 'agentic_records_healthcare_demo_v4_simple';
 
 export interface ToastNotice {
   id: string;
@@ -329,7 +329,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 function getDefaultScreenForRole(roleId: UserRoleId): NavigationScreen {
   switch (roleId) {
     case 'admin_priya':
-      return 'rule_test_lab';
+      return 'admin_onboarding';
     case 'chro_david':
       return 'executive_overview';
     case 'cred_alex':
@@ -363,6 +363,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeRoleId, setActiveRoleId] = useState<UserRoleId>(initialRoleId);
 
   const validScreens = new Set<NavigationScreen>([
+    'demo_home',
+    'admin_onboarding',
     'weekly_overview',
     'employees',
     'employee_records',
@@ -398,7 +400,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const initialScreen: NavigationScreen =
     saved?.currentScreen && validScreens.has(saved.currentScreen as NavigationScreen)
       ? (saved.currentScreen as NavigationScreen)
-      : getDefaultScreenForRole(initialRoleId);
+      : 'demo_home';
   const [currentScreen, setCurrentScreen] = useState<NavigationScreen>(initialScreen);
   const [currentEnvironment, setCurrentEnvironment] = useState<EnvironmentType>(
     'Demo Sandbox (Simulated)'
@@ -2383,7 +2385,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         break;
       case 'scenario_5_priya_policy_publish':
         setActiveRoleId('admin_priya');
-        setCurrentScreen('rule_test_lab');
+        setCurrentScreen('admin_onboarding');
         notify('Scenario 5: Priya Rule Test Lab (FIX-05 failing draft -> fix -> Alex approval).', 'info');
         break;
       case 'scenario_6_david_executive':

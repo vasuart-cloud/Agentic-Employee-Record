@@ -4,6 +4,7 @@ import { USER_PERSONAS } from '../../data/mockData';
 import { DemoScenarioId, UserRoleId } from '../../types';
 import {
   ShieldCheck,
+  House,
   Search,
   ChevronDown,
   HelpCircle,
@@ -19,33 +20,18 @@ import {
 const SCENARIOS: { id: DemoScenarioId; title: string; subtitle: string }[] = [
   {
     id: 'scenario_1_expired_pharmacist',
-    title: '1. Expired License Escalation (Daniel Kim)',
-    subtitle: 'Maya triage -> Employee portal upload -> Alex PSV -> Multi-req closure'
-  },
-  {
-    id: 'scenario_2_newhire_nurse',
-    title: '2. New Hire Preboarding (Elena Alvarez)',
-    subtitle: 'Texas RN starting in 7 days · Admin vs Clinical Duty split'
-  },
-  {
-    id: 'scenario_3_suspended_license',
-    title: '3. Restricted Board Status (Marcus Vance)',
-    subtitle: 'Negative PSV blocks closure & triggers clinical leadership escalation'
-  },
-  {
-    id: 'scenario_4_workday_retry',
-    title: '4. Workday Staging Retry (Hannah Abbott)',
-    subtitle: 'HTTP 504 writeback recovery with idempotency key'
+    title: '1. Resolve an expired license',
+    subtitle: 'Maya → Daniel → Alex · 4-minute HR story'
   },
   {
     id: 'scenario_5_priya_policy_publish',
-    title: '5. Rule Test Lab & Sign-Off (Priya -> Alex)',
-    subtitle: 'Failing FIX-05 draft -> fix & rerun -> independent approval'
+    title: '2. Configure and approve a rule',
+    subtitle: 'Priya → Test → Alex · 3-minute admin story'
   },
   {
     id: 'scenario_6_david_executive',
-    title: '6. Executive Readiness & Value (David)',
-    subtitle: 'Facility risk, sample denominators & capacity vs cash ROI'
+    title: '3. See executive risk & value',
+    subtitle: 'David · 2-minute leadership story'
   }
 ];
 
@@ -335,6 +321,8 @@ export const Header: React.FC = () => {
             <span>Kill Switch Active</span>
           </button>
         )}
+
+        <button onClick={() => setCurrentScreen('demo_home')} className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 hover:bg-teal-100 text-xs font-semibold text-teal-900" title="Return to the three guided stories"><House className="w-4 h-4"/> All Stories</button>
 
         {/* Demo Scenario Launcher */}
         <div className="relative" ref={scenarioRef}>
