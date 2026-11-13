@@ -14,6 +14,8 @@ export interface UserPersona {
 }
 
 export type NavigationScreen =
+  | 'demo_home'
+  | 'admin_onboarding'
   // Maya (HR Operations Lead)
   | 'weekly_overview'
   | 'employees'
