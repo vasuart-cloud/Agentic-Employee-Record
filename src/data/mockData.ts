@@ -1,3 +1,6 @@
+import mayaAvatar from '../assets/images/avatar_maya_thompson_1791368343099.jpg';
+import sarahAvatar from '../assets/images/avatar_sarah_lee_1791368352965.jpg';
+import davidAvatar from '../assets/images/avatar_david_miller_1791368363106.jpg';
 import {
   AgentInfo,
   AgentTrace,
@@ -36,7 +39,7 @@ export const USER_PERSONAS: Record<string, UserPersona> = {
     title: 'HR Operations Lead',
     roleLabel: 'HR Operations Lead',
     email: 'maya.ops@biovanguard-demo.example',
-    avatarUrl: '/src/assets/images/avatar_maya_thompson_1791368343099.jpg',
+    avatarUrl: mayaAvatar,
     workspaceLabel: 'Weekly Workforce Readiness & Triage',
     jobToBeDone: 'Triage weekly compliance exceptions, coordinate employee outreach, and close verified administrative cases.',
     description:
@@ -48,7 +51,7 @@ export const USER_PERSONAS: Record<string, UserPersona> = {
     title: 'Healthcare Compliance Administrator',
     roleLabel: 'Compliance Admin',
     email: 'p.sharma@biovanguard-demo.example',
-    avatarUrl: '/src/assets/images/avatar_sarah_lee_1791368352965.jpg',
+    avatarUrl: sarahAvatar,
     workspaceLabel: 'Policy Rules, Test Lab & Integrations',
     jobToBeDone: 'Author scoped healthcare rules, run sandbox fixture tests, govern Workday mappings, and monitor AI safety.',
     description:
@@ -60,7 +63,7 @@ export const USER_PERSONAS: Record<string, UserPersona> = {
     title: 'CHRO / VP People',
     roleLabel: 'Executive CHRO',
     email: 'd.miller@biovanguard-demo.example',
-    avatarUrl: '/src/assets/images/avatar_david_miller_1791368363106.jpg',
+    avatarUrl: davidAvatar,
     workspaceLabel: 'Executive Facility Risk & Readiness',
     jobToBeDone: 'Monitor facility-level exposure, onboarding time-to-readiness, and modeled operational capacity value.',
     description:
@@ -72,7 +75,7 @@ export const USER_PERSONAS: Record<string, UserPersona> = {
     title: 'Credentialing & Clinical Compliance Reviewer',
     roleLabel: 'Credentialing Reviewer',
     email: 'a.morgan@biovanguard-demo.example',
-    avatarUrl: '/src/assets/images/avatar_sarah_lee_1791368352965.jpg',
+    avatarUrl: sarahAvatar,
     workspaceLabel: 'Primary Source Verification & Approvals',
     jobToBeDone: 'Execute simulated primary-source checks, validate clinical credentials, and provide independent rule sign-off.',
     isSupportingDemoRole: true,
