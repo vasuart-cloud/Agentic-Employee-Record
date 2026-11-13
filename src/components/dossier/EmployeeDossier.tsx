@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { evaluateFormI9Acceptability, DEMO_REFERENCE_DATE } from '../../domain/rules';
 import { getCaseDaysUntilDue, getCaseDurationDays } from '../../domain/readiness';
@@ -24,6 +24,7 @@ import {
 export const EmployeeDossier: React.FC = () => {
   const {
     activeRoleId,
+    currentPersona,
     switchRole,
     can,
     workers,
@@ -67,7 +68,14 @@ export const EmployeeDossier: React.FC = () => {
   const [portalFile, setPortalFile] = useState<File | null>(null);
   const [portalNote, setPortalNote] = useState('');
   const [portalClaimedExp, setPortalClaimedExp] = useState('2028-09-15');
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [portalSubmittedReceipt, setPortalSubmittedReceipt] = useState<{
+    trackingId: string;
+    message: string;
+  } | null>(null);
+  const [portalSubmitting, setPortalSubmitting] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const evidenceSectionRef = useRef<HTMLDivElement>(null);
 
   const workerAssignments = useMemo(
     () => assignments.filter((a) => a.workerId === selectedWorker.id),
@@ -88,6 +96,34 @@ export const EmployeeDossier: React.FC = () => {
     if (selectedCase && selectedCase.workerId === selectedWorker.id) return selectedCase;
     return workerCases[0] || null;
   }, [selectedCase, workerCases, selectedWorker.id]);
+
+  useEffect(() => {
+    setOutreachSubject('');
+    setOutreachBody('');
+    setPortalFile(null);
+    setPortalNote('');
+    setPortalError(null);
+    setPortalSubmittedReceipt(null);
+  }, [activeCase?.id, selectedWorker.id]);
+
+  useEffect(() => {
+    if (!isWhyDrawerOpen && !isEmployeePortalOpen && !isHRMSSyncPayloadModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsWhyDrawerOpen(false);
+        setIsEmployeePortalOpen(false);
+        setIsHRMSSyncPayloadModalOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [
+    isWhyDrawerOpen,
+    isEmployeePortalOpen,
+    isHRMSSyncPayloadModalOpen,
+    setIsEmployeePortalOpen,
+    setIsHRMSSyncPayloadModalOpen
+  ]);
 
   const activeRequirement = useMemo(
     () => (activeCase ? requirements.find((r) => r.requirementId === activeCase.requirementId) : undefined),
@@ -190,8 +226,8 @@ export const EmployeeDossier: React.FC = () => {
     URL.revokeObjectURL(url);
 
     logAuditEvent({
-      actor: activeRoleId,
-      actorRole: activeRoleId,
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
       action: 'EXPORT_DEMO_EVIDENCE_PACKET',
       category: 'EVIDENCE',
       source: 'Employee Dossier',
@@ -609,7 +645,7 @@ export const EmployeeDossier: React.FC = () => {
               </div>
 
               {/* Submitted Evidence Items */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+              <div ref={evidenceSectionRef} className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
                 <h3 className="text-sm font-semibold text-slate-900">
                   Worker Evidence Records ({workerEvidence.length})
                 </h3>
@@ -637,16 +673,20 @@ export const EmployeeDossier: React.FC = () => {
                           </div>
                           <div className="text-[10px] text-slate-500">{ev.extractionMethodNote}</div>
                           {preview && (
-                            <div className="pt-1">
+                            <div className="pt-1 space-y-1">
                               {preview.mimeType.startsWith('image/') ? (
                                 <img
                                   src={preview.objectUrl}
                                   alt={preview.fileName}
                                   className="max-h-32 rounded border border-slate-200"
                                 />
+                              ) : preview.textSnippet ? (
+                                <pre className="p-2 rounded bg-white border border-slate-200 font-mono text-[10px] text-slate-700 whitespace-pre-wrap max-h-28 overflow-y-auto">
+                                  {preview.textSnippet}
+                                </pre>
                               ) : (
                                 <div className="text-[11px] text-teal-800 font-medium">
-                                  Local browser file attached ({preview.fileName}) — held in session memory only.
+                                  Local browser file attached ({preview.fileName}) — held in session memory only; manual review required.
                                 </div>
                               )}
                             </div>
@@ -805,11 +845,18 @@ export const EmployeeDossier: React.FC = () => {
                 </h3>
 
                 {activeCase.workflowState === 'resolved' ? (
-                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>
-                      Closed by {activeCase.resolvedBy} at {activeCase.resolvedAt}.
-                    </span>
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>
+                        Closed administratively by {activeCase.resolvedBy} at {activeCase.resolvedAt}.
+                      </span>
+                    </div>
+                    {selectedWorker.clinicalEligibility === 'REVIEW_REQUIRED' && (
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                        Notice: Administrative HR file closure is complete, while worker clinical duty eligibility still requires separate authorization by a designated clinical leader.
+                      </div>
+                    )}
                   </div>
                 ) : isPSVRequired ? (
                   <div className="space-y-3">
@@ -893,9 +940,19 @@ export const EmployeeDossier: React.FC = () => {
                   Writes readiness summary ONLY to <code className="font-mono bg-slate-100 px-1 rounded">Workday_Custom_Compliance_Staging__c</code>. Master worker records and payroll remain read-only.
                 </p>
 
+                {activeCase.workflowState !== 'resolved' && (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                    Gate Enforced: Complete Step 3 administrative case closure before dispatching an outbound Workday staging writeback.
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   <button
-                    disabled={syncLoading || !can('TRIGGER_WORKDAY_SYNC').allowed}
+                    disabled={
+                      syncLoading ||
+                      activeCase.workflowState !== 'resolved' ||
+                      !can('TRIGGER_WORKDAY_SYNC').allowed
+                    }
                     onClick={async () => {
                       setSyncLoading(true);
                       await queueAndSyncWorkdayStaging(activeCase.id, false);
@@ -907,7 +964,11 @@ export const EmployeeDossier: React.FC = () => {
                     <span>Sync to Workday Staging (Success)</span>
                   </button>
                   <button
-                    disabled={syncLoading || !can('TRIGGER_WORKDAY_SYNC').allowed}
+                    disabled={
+                      syncLoading ||
+                      activeCase.workflowState !== 'resolved' ||
+                      !can('TRIGGER_WORKDAY_SYNC').allowed
+                    }
                     onClick={async () => {
                       setSyncLoading(true);
                       await queueAndSyncWorkdayStaging(activeCase.id, true);
@@ -970,12 +1031,29 @@ export const EmployeeDossier: React.FC = () => {
 
             <div className="p-6 overflow-y-auto space-y-4">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-semibold text-slate-900">Assignment &amp; Rule Triggered</div>
+                <div>
+                  <strong>Worker / Role:</strong> {activeCase.workerName} · {activeCase.role}
+                </div>
+                <div>
+                  <strong>Facility / State:</strong> {activeCase.facilityName} ({activeCase.state}) · Assignment <span className="font-mono">{activeCase.assignmentId}</span>
+                </div>
+                <div>
+                  <strong>Rule Code &amp; Version:</strong>{' '}
+                  <span className="font-mono">{activeRequirement?.ruleCode || activeCase.ruleId}</span> ({activeCase.ruleVersion}) · Run <span className="font-mono">{activeCase.whyFlagged.agentRunId}</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                 <div className="font-semibold text-slate-900">Rule &amp; Policy Citation</div>
                 <div>
                   <strong>Policy:</strong> {activeCase.whyFlagged.policyName} ({activeCase.whyFlagged.policyVersion}, effective {activeCase.whyFlagged.policyEffectiveDate})
                 </div>
                 <div>
                   <strong>Clause:</strong> {activeCase.whyFlagged.clause}
+                </div>
+                <div>
+                  <strong>Accepted Evidence:</strong> {activeCase.whyFlagged.alternativesAccepted.join(', ')}
                 </div>
                 <p className="text-slate-600 italic bg-white p-2.5 rounded border border-slate-200">
                   “{activeCase.whyFlagged.clauseText}”
@@ -1004,9 +1082,22 @@ export const EmployeeDossier: React.FC = () => {
                 </div>
                 <p className="text-amber-900">{activeCase.whyFlagged.confidenceDisclaimer}</p>
                 <p className="text-amber-900">
+                  <strong>Uncertainty Note:</strong> {activeCase.whyFlagged.uncertaintyNote}
+                </p>
+                <p className="text-amber-900">
                   <strong>Why PSV Required:</strong> {activeCase.whyFlagged.whyAuthoritativeVerificationRequired}
                 </p>
               </div>
+
+              <button
+                onClick={() => {
+                  setIsWhyDrawerOpen(false);
+                  evidenceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className="w-full py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-semibold"
+              >
+                Jump to Worker Evidence Records ↓
+              </button>
             </div>
           </div>
         </div>
@@ -1040,103 +1131,166 @@ export const EmployeeDossier: React.FC = () => {
                 <strong>Requested Item:</strong> {activeCase.title}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setPortalMode('sample_doc')}
-                  className={`p-2 rounded-lg border text-left font-medium ${
-                    portalMode === 'sample_doc' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
-                  }`}
-                >
-                  1-Click Sample Doc
-                </button>
-                <button
-                  onClick={() => setPortalMode('file')}
-                  className={`p-2 rounded-lg border text-left font-medium ${
-                    portalMode === 'file' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
-                  }`}
-                >
-                  Upload Real File
-                </button>
-                <button
-                  onClick={() => setPortalMode('reply_question')}
-                  className={`p-2 rounded-lg border text-left font-medium ${
-                    portalMode === 'reply_question' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
-                  }`}
-                >
-                  Reply With Question
-                </button>
-                <button
-                  onClick={() => setPortalMode('already_submitted_workday')}
-                  className={`p-2 rounded-lg border text-left font-medium ${
-                    portalMode === 'already_submitted_workday' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
-                  }`}
-                >
-                  Submitted in Workday
-                </button>
-              </div>
-
-              {portalMode === 'file' && (
-                <div className="space-y-2">
-                  <label className="block font-medium text-slate-700">
-                    Select PDF, JPG, PNG, or TXT file from your device
-                  </label>
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png,.txt"
-                    onChange={(e) => setPortalFile(e.target.files?.[0] || null)}
-                    className="w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-teal-700 file:text-white file:font-semibold"
-                  />
-                  <div className="text-[10px] text-slate-500">
-                    Held in session memory only (not saved to localStorage). Uploading never marks a regulated license verified.
+              {portalSubmittedReceipt ? (
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-900 font-semibold">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Submitted to HR Review Queue</span>
+                  </div>
+                  <div className="text-emerald-950 leading-relaxed">{portalSubmittedReceipt.message}</div>
+                  <div className="font-mono text-[11px] bg-white border border-emerald-200 rounded px-2.5 py-1.5 text-emerald-900">
+                    Tracking ID: <strong>{portalSubmittedReceipt.trackingId}</strong>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setPortalSubmittedReceipt(null);
+                        setIsEmployeePortalOpen(false);
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold"
+                    >
+                      Done &amp; Return to Dossier
+                    </button>
                   </div>
                 </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setPortalMode('sample_doc');
+                        setPortalError(null);
+                      }}
+                      className={`p-2 rounded-lg border text-left font-medium ${
+                        portalMode === 'sample_doc' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                      }`}
+                    >
+                      1-Click Sample Doc
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPortalMode('file');
+                        setPortalError(null);
+                      }}
+                      className={`p-2 rounded-lg border text-left font-medium ${
+                        portalMode === 'file' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                      }`}
+                    >
+                      Upload Real File
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPortalMode('reply_question');
+                        setPortalError(null);
+                      }}
+                      className={`p-2 rounded-lg border text-left font-medium ${
+                        portalMode === 'reply_question' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                      }`}
+                    >
+                      Reply With Question
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPortalMode('already_submitted_workday');
+                        setPortalError(null);
+                      }}
+                      className={`p-2 rounded-lg border text-left font-medium ${
+                        portalMode === 'already_submitted_workday' ? 'border-teal-700 bg-teal-50 text-teal-900' : 'border-slate-200'
+                      }`}
+                    >
+                      Submitted in Workday
+                    </button>
+                  </div>
+
+                  {portalMode === 'file' && (
+                    <div className="space-y-2">
+                      <label className="block font-medium text-slate-700">
+                        Select PDF, JPG, PNG, or TXT file from your device (max 5 MB)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.txt"
+                        onChange={(e) => {
+                          setPortalFile(e.target.files?.[0] || null);
+                          setPortalError(null);
+                        }}
+                        className="w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-teal-700 file:text-white file:font-semibold"
+                      />
+                      <div className="text-[10px] text-slate-500">
+                        Held in session memory only (not saved to localStorage). Uploading never marks a regulated license verified.
+                      </div>
+                    </div>
+                  )}
+
+                  {(portalMode === 'sample_doc' || portalMode === 'file') && (
+                    <div>
+                      <label className="block font-medium text-slate-700 mb-1">
+                        Claimed Expiration Date (Requires Verification)
+                      </label>
+                      <input
+                        type="date"
+                        value={portalClaimedExp}
+                        onChange={(e) => setPortalClaimedExp(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Note for HR / Credentialing {portalMode === 'reply_question' ? '(Required)' : ''}
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={portalNote}
+                      onChange={(e) => {
+                        setPortalNote(e.target.value);
+                        setPortalError(null);
+                      }}
+                      placeholder={
+                        portalMode === 'already_submitted_workday'
+                          ? 'I uploaded this in Workday on Tuesday...'
+                          : portalMode === 'reply_question'
+                          ? 'Enter your question or clarification for HR...'
+                          : 'Optional note...'
+                      }
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
+                    />
+                  </div>
+
+                  {portalError && (
+                    <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-medium">
+                      {portalError}
+                    </div>
+                  )}
+
+                  <button
+                    disabled={portalSubmitting}
+                    onClick={async () => {
+                      setPortalSubmitting(true);
+                      setPortalError(null);
+                      const res = await submitEmployeePortalResponse(activeCase.id, {
+                        mode: portalMode,
+                        file: portalFile,
+                        expirationDate: portalClaimedExp,
+                        note: portalNote
+                      });
+                      setPortalSubmitting(false);
+                      if (!res.ok) {
+                        setPortalError(res.message);
+                        return;
+                      }
+                      setPortalSubmittedReceipt({
+                        trackingId: res.trackingId || `PORTAL-${Date.now().toString().slice(-6)}`,
+                        message: res.message
+                      });
+                    }}
+                    className="w-full py-2.5 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-semibold"
+                  >
+                    {portalSubmitting ? 'Submitting...' : 'Submit Response to HR Queue'}
+                  </button>
+                </>
               )}
-
-              {(portalMode === 'sample_doc' || portalMode === 'file') && (
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">
-                    Claimed Expiration Date (Requires Verification)
-                  </label>
-                  <input
-                    type="date"
-                    value={portalClaimedExp}
-                    onChange={(e) => setPortalClaimedExp(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">
-                  Note for HR / Credentialing
-                </label>
-                <textarea
-                  rows={2}
-                  value={portalNote}
-                  onChange={(e) => setPortalNote(e.target.value)}
-                  placeholder={
-                    portalMode === 'already_submitted_workday'
-                      ? 'I uploaded this in Workday on Tuesday...'
-                      : 'Optional note...'
-                  }
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
-                />
-              </div>
-
-              <button
-                onClick={() => {
-                  submitEmployeePortalResponse(activeCase.id, {
-                    mode: portalMode,
-                    file: portalFile,
-                    expirationDate: portalClaimedExp,
-                    note: portalNote
-                  });
-                  setIsEmployeePortalOpen(false);
-                }}
-                className="w-full py-2.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold"
-              >
-                Submit Response to HR Queue
-              </button>
             </div>
           </div>
         </div>

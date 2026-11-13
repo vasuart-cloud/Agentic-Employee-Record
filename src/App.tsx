@@ -112,7 +112,7 @@ const MainContent: React.FC = () => {
             />
           ))}
 
-        {/* AI Governance & Subviews */}
+        {/* AI Governance & Admin Subviews (Priya Only) */}
         {currentScreen === 'ai_governance' &&
           (isPriya ? (
             <AIGovernanceHub />
@@ -122,30 +122,116 @@ const MainContent: React.FC = () => {
               targetRoleKey="admin_priya"
             />
           ))}
-        {currentScreen === 'command_center' && <CommandCenter />}
-        {(currentScreen === 'agents' || currentScreen === 'agent_detail') && <AgentDetailPage />}
-        {currentScreen === 'agent_workflows' && <AgentWorkflowBuilder />}
-        {currentScreen === 'evals' && <AgentEvalsView />}
-        {currentScreen === 'observability' && <ObservabilityView />}
-        {(currentScreen === 'guardrails' || currentScreen === 'settings') && <GuardrailsView />}
+        {currentScreen === 'command_center' &&
+          (isPriya ? (
+            <CommandCenter />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {(currentScreen === 'agents' || currentScreen === 'agent_detail') &&
+          (isPriya ? (
+            <AgentDetailPage />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {currentScreen === 'agent_workflows' &&
+          (isPriya ? (
+            <AgentWorkflowBuilder />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {currentScreen === 'evals' &&
+          (isPriya || isAlex ? (
+            <AgentEvalsView />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {currentScreen === 'observability' &&
+          (isPriya ? (
+            <ObservabilityView />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {(currentScreen === 'guardrails' || currentScreen === 'settings') &&
+          (isPriya ? (
+            <GuardrailsView />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
 
         {/* Integrations, Audit & Access */}
-        {currentScreen === 'integrations' && <IntegrationsView />}
-        {currentScreen === 'audit_access' && (
-          <div className="space-y-8">
+        {currentScreen === 'integrations' &&
+          (isPriya || activeRoleId === 'hr_ops_maya' ? (
+            <IntegrationsView />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma or Maya (HR Ops)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {currentScreen === 'audit_access' &&
+          (isPriya ? (
+            <div className="space-y-8">
+              <UsersRolesView />
+              <AuditLogView />
+            </div>
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
+        {currentScreen === 'users_roles' &&
+          (isPriya ? (
             <UsersRolesView />
-            <AuditLogView />
-          </div>
-        )}
-        {currentScreen === 'users_roles' && <UsersRolesView />}
+          ) : (
+            <RoleRestrictedView
+              requiredRole="Priya Sharma (Healthcare Compliance Admin)"
+              targetRoleKey="admin_priya"
+            />
+          ))}
         {currentScreen === 'audit_logs' && <AuditLogView />}
 
         {/* David Executive & Business Value */}
         {(currentScreen === 'executive_overview' ||
           currentScreen === 'risk_by_facility' ||
           currentScreen === 'readiness_trends' ||
-          currentScreen === 'pilot_scorecard') && <ExecutiveOverview />}
-        {currentScreen === 'business_value' && <BusinessValueView />}
+          currentScreen === 'pilot_scorecard') &&
+          (activeRoleId === 'chro_david' || isPriya ? (
+            <ExecutiveOverview />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="David Miller (CHRO)"
+              targetRoleKey="chro_david"
+            />
+          ))}
+        {currentScreen === 'business_value' &&
+          (activeRoleId === 'chro_david' || isPriya ? (
+            <BusinessValueView />
+          ) : (
+            <RoleRestrictedView
+              requiredRole="David Miller (CHRO)"
+              targetRoleKey="chro_david"
+            />
+          ))}
       </main>
 
       {/* Modals & Notifications */}

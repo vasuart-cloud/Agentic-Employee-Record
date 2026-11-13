@@ -10,7 +10,9 @@ import {
   ShieldAlert,
   ArrowRight,
   RefreshCw,
-  Filter
+  Filter,
+  Search,
+  ListChecks
 } from 'lucide-react';
 
 type QueueTab =
@@ -36,9 +38,19 @@ export const WeeklyOperationsDashboard: React.FC = () => {
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<QueueTab>('all_open');
+  const [weekWindow, setWeekWindow] = useState<'current' | 'prior' | 'all'>('current');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [facilityFilter, setFacilityFilter] = useState<string>('ALL');
+  const [stateFilter, setStateFilter] = useState<string>('ALL');
+  const [ownerFilter, setOwnerFilter] = useState<string>('ALL');
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
   const [showResolved, setShowResolved] = useState<boolean>(false);
+  const [showReviewGuide, setShowReviewGuide] = useState<boolean>(false);
+
+  const uniqueStates = useMemo(
+    () => Array.from(new Set(facilities.map((f) => f.state))).sort(),
+    [facilities]
+  );
 
   const workerById = useMemo(() => {
     const m: Record<string, (typeof workers)[number]> = {};
@@ -46,13 +58,37 @@ export const WeeklyOperationsDashboard: React.FC = () => {
     return m;
   }, [workers]);
 
+  const weeklySummary = useMemo(() => {
+    const open = cases.filter((c) => c.workflowState !== 'resolved');
+    const uniqueWorkers = new Set(open.map((c) => c.workerId)).size;
+    const newlyDetected = open.filter((c) => c.detectedDate >= '2026-11-09').length;
+    const carriedOver = open.filter((c) => c.detectedDate < '2026-11-09').length;
+    const overdue = open.filter((c) => getCaseDaysUntilDue(c, DEMO_REFERENCE_DATE) < 0).length;
+    return {
+      uniqueWorkers,
+      newlyDetected,
+      carriedOver,
+      overdue
+    };
+  }, [cases]);
+
   const filteredCases = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return cases.filter((c) => {
       if (!showResolved && c.workflowState === 'resolved' && activeTab !== 'sync_failures') {
         return false;
       }
+      if (weekWindow === 'current' && c.detectedDate > '2026-11-15') return false;
+      if (weekWindow === 'prior' && c.detectedDate >= '2026-11-09') return false;
       if (facilityFilter !== 'ALL' && c.facilityId !== facilityFilter) return false;
+      if (stateFilter !== 'ALL' && c.state !== stateFilter) return false;
+      if (ownerFilter === 'MAYA' && !c.hrOutreachOwner.toLowerCase().includes('maya')) return false;
+      if (ownerFilter === 'ALEX' && !c.clinicalRiskOwner.toLowerCase().includes('alex')) return false;
       if (severityFilter !== 'ALL' && c.severity !== severityFilter) return false;
+      if (q) {
+        const hay = `${c.workerName} ${c.workerId} ${c.caseNumber} ${c.title} ${c.role}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
 
       switch (activeTab) {
         case 'clinical_risk':
@@ -80,7 +116,7 @@ export const WeeklyOperationsDashboard: React.FC = () => {
             c.documentState === 'REVIEW_REQUIRED' ||
             c.verificationState === 'PENDING_SOURCE_CHECK' ||
             c.verificationState === 'VERIFICATION_FAILED' ||
-            c.verificationState === 'VERIFIED_ACTIVE' && c.workflowState !== 'resolved'
+            (c.verificationState === 'VERIFIED_ACTIVE' && c.workflowState !== 'resolved')
           );
         case 'sync_failures':
           return (
@@ -92,7 +128,18 @@ export const WeeklyOperationsDashboard: React.FC = () => {
           return true;
       }
     });
-  }, [cases, activeTab, facilityFilter, severityFilter, showResolved, workerById]);
+  }, [
+    cases,
+    activeTab,
+    weekWindow,
+    searchQuery,
+    facilityFilter,
+    stateFilter,
+    ownerFilter,
+    severityFilter,
+    showResolved,
+    workerById
+  ]);
 
   const tabs: { id: QueueTab; label: string; count: number }[] = [
     {
@@ -207,7 +254,26 @@ export const WeeklyOperationsDashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={weekWindow}
+            onChange={(e) => setWeekWindow(e.target.value as any)}
+            aria-label="Select week window"
+            className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700"
+          >
+            <option value="current">This Week (Nov 9–15, 2026)</option>
+            <option value="prior">Carried Over (&lt; Nov 9, 2026)</option>
+            <option value="all">All Windows</option>
+          </select>
+
+          <button
+            onClick={() => setShowReviewGuide((s) => !s)}
+            className="px-3 py-1.5 rounded-lg border border-teal-700 bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-semibold flex items-center gap-1.5"
+          >
+            <ListChecks className="w-3.5 h-3.5" />
+            <span>{showReviewGuide ? 'Hide Weekly Review' : 'Start Weekly Compliance Review'}</span>
+          </button>
+
           {failedSyncTxCount > 0 && (
             <button
               onClick={() => setCurrentScreen('integrations')}
@@ -219,6 +285,25 @@ export const WeeklyOperationsDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showReviewGuide && (
+        <div className="bg-white border border-teal-200 rounded-xl p-4 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="font-semibold text-teal-900">
+              Recommended Weekly Operations Triage Sequence
+            </div>
+            <div className="text-slate-600">
+              1. Triage <strong>Immediate Clinical Risk</strong> (expired/restricted credentials) → 2. Unblock <strong>Preboarding &amp; 30d</strong> hires → 3. Verify <strong>Needs PSV / Review</strong> uploads with Credentialing → 4. Reconcile <strong>Sync Failures</strong>.
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('clinical_risk')}
+            className="px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold shrink-0"
+          >
+            Jump to Immediate Clinical Risk
+          </button>
+        </div>
+      )}
 
       {/* KPI Strip — Exact Sample Denominators */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -290,6 +375,42 @@ export const WeeklyOperationsDashboard: React.FC = () => {
         </button>
       </div>
 
+      {/* Section 12 Weekly Denominator & SLA Summary Strip */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs tabular-nums">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Affected Workers / Cases</div>
+          <div className="font-semibold text-slate-900 mt-0.5">
+            {weeklySummary.uniqueWorkers} workers · {computedMetrics.openCasesCount} cases
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">New vs Carried Over</div>
+          <div className="font-semibold text-slate-900 mt-0.5">
+            {weeklySummary.newlyDetected} new · {weeklySummary.carriedOver} prior
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Overdue Exceptions</div>
+          <div className={`font-semibold mt-0.5 ${weeklySummary.overdue > 0 ? 'text-rose-700' : 'text-slate-900'}`}>
+            {weeklySummary.overdue} overdue
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Aged Unowned</div>
+          <div className="font-semibold text-slate-900 mt-0.5">0 unowned</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Completed This Week</div>
+          <div className="font-semibold text-emerald-700 mt-0.5">
+            {computedMetrics.resolvedCasesCount} resolved
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Median Handling Time</div>
+          <div className="font-semibold text-slate-600 mt-0.5">Not measured</div>
+        </div>
+      </div>
+
       {/* Queue Tabs + Filter Controls */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-4 pt-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
@@ -320,6 +441,18 @@ export const WeeklyOperationsDashboard: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pb-2 text-xs">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search worker, case, role..."
+                aria-label="Filter queue by text"
+                className="pl-7 pr-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 text-xs w-44 focus:outline-none focus:border-teal-600 focus:bg-white"
+              />
+            </div>
+
             <Filter className="w-3.5 h-3.5 text-slate-400" />
             <select
               value={facilityFilter}
@@ -333,6 +466,31 @@ export const WeeklyOperationsDashboard: React.FC = () => {
                   {f.name}
                 </option>
               ))}
+            </select>
+
+            <select
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value)}
+              aria-label="Filter by state"
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 text-xs"
+            >
+              <option value="ALL">All States</option>
+              {uniqueStates.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+              aria-label="Filter by owner"
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 text-xs"
+            >
+              <option value="ALL">All Owners</option>
+              <option value="MAYA">HR Ops (Maya)</option>
+              <option value="ALEX">Credentialing (Alex)</option>
             </select>
 
             <select

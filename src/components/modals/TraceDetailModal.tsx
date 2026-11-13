@@ -1,25 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { 
-  X, 
-  Eye, 
-  Clock, 
-  DollarSign, 
-  Cpu, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Database, 
-  ShieldCheck,
-  Layers,
-  ArrowRight
-} from 'lucide-react';
+import { X, Eye } from 'lucide-react';
 
 export const TraceDetailModal: React.FC = () => {
-  const { 
-    isTraceModalOpen, 
-    setIsTraceModalOpen, 
-    selectedTrace 
-  } = useApp();
+  const { isTraceModalOpen, setIsTraceModalOpen, selectedTrace } = useApp();
+
+  useEffect(() => {
+    if (!isTraceModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsTraceModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTraceModalOpen, setIsTraceModalOpen]);
 
   if (!isTraceModalOpen || !selectedTrace) return null;
 

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DemoScenarioId } from '../../types';
-import { X, ShieldAlert, Play, CheckCircle2 } from 'lucide-react';
+import { X, ShieldAlert, Play, CheckCircle2, RotateCcw } from 'lucide-react';
 
 const GUIDE_SCENARIOS: { id: DemoScenarioId; label: string; detail: string }[] = [
   {
@@ -37,7 +37,16 @@ const GUIDE_SCENARIOS: { id: DemoScenarioId; label: string; detail: string }[] =
 ];
 
 export const DemoGuideModal: React.FC = () => {
-  const { isDemoGuideOpen, setIsDemoGuideOpen, launchDemoScenario } = useApp();
+  const { isDemoGuideOpen, setIsDemoGuideOpen, launchDemoScenario, resetScenario } = useApp();
+
+  useEffect(() => {
+    if (!isDemoGuideOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsDemoGuideOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isDemoGuideOpen, setIsDemoGuideOpen]);
 
   if (!isDemoGuideOpen) return null;
 
@@ -90,24 +99,42 @@ export const DemoGuideModal: React.FC = () => {
 
           <div className="space-y-2.5">
             <h3 className="font-semibold text-slate-900 uppercase tracking-wider text-[11px]">
-              Launch Any Discovery Scenario
+              Launch or Reset Individual Discovery Scenarios
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {GUIDE_SCENARIOS.map((sc) => (
-                <button
+                <div
                   key={sc.id}
-                  onClick={() => {
-                    launchDemoScenario(sc.id);
-                    setIsDemoGuideOpen(false);
-                  }}
-                  className="text-left p-3.5 rounded-xl border border-slate-200 hover:border-teal-600 hover:bg-teal-50/30 transition-colors space-y-1.5"
+                  className="p-3.5 rounded-xl border border-slate-200 hover:border-teal-600 transition-colors space-y-2.5 flex flex-col justify-between"
                 >
-                  <div className="font-semibold text-slate-900 flex items-center justify-between gap-2">
-                    <span>{sc.label}</span>
-                    <Play className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                  <div className="space-y-1">
+                    <div className="font-semibold text-slate-900">{sc.label}</div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">{sc.detail}</p>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">{sc.detail}</p>
-                </button>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        launchDemoScenario(sc.id);
+                        setIsDemoGuideOpen(false);
+                      }}
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold flex items-center justify-center gap-1"
+                    >
+                      <Play className="w-3 h-3" />
+                      <span>Launch</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        resetScenario(sc.id);
+                        setIsDemoGuideOpen(false);
+                      }}
+                      title="Reset only this scenario to baseline"
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset</span>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>

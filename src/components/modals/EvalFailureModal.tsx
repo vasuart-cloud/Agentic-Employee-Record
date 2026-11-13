@@ -1,20 +1,34 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, AlertTriangle, Play, UserCheck, Wrench, ArrowRight } from 'lucide-react';
+import { X, AlertTriangle, Play, UserCheck, Wrench } from 'lucide-react';
 
 export const EvalFailureModal: React.FC = () => {
-  const { 
-    selectedEvalCase, 
-    isEvalModalOpen, 
+  const {
+    selectedEvalCase,
+    isEvalModalOpen,
     setIsEvalModalOpen,
+    setCurrentScreen,
+    runDraftRuleTestLab,
+    can,
     notify
   } = useApp();
 
+  useEffect(() => {
+    if (!isEvalModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsEvalModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isEvalModalOpen, setIsEvalModalOpen]);
+
   if (!isEvalModalOpen || !selectedEvalCase) return null;
+
+  const canTest = can('RUN_RULE_SANDBOX_EVAL');
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-      <div 
+      <div
         className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs"
         onClick={() => setIsEvalModalOpen(false)}
       />
@@ -30,9 +44,7 @@ export const EvalFailureModal: React.FC = () => {
               <div className="text-[10px] font-mono font-bold text-amber-800 uppercase">
                 FAILED EVAL CASE INVESTIGATION
               </div>
-              <h2 className="text-base font-bold text-slate-900">
-                {selectedEvalCase.name}
-              </h2>
+              <h2 className="text-base font-bold text-slate-900">{selectedEvalCase.name}</h2>
             </div>
           </div>
 
@@ -64,7 +76,9 @@ export const EvalFailureModal: React.FC = () => {
           </div>
 
           <div className="p-3.5 bg-rose-50/60 border border-rose-200 rounded-xl space-y-1">
-            <span className="font-bold text-rose-800 font-mono text-[10px] uppercase block">DIFFERENCE / ROOT CAUSE</span>
+            <span className="font-bold text-rose-800 font-mono text-[10px] uppercase block">
+              DIFFERENCE / ROOT CAUSE
+            </span>
             <p className="text-rose-950 leading-relaxed">{selectedEvalCase.difference}</p>
           </div>
 
@@ -74,7 +88,7 @@ export const EvalFailureModal: React.FC = () => {
               <span className="font-bold text-slate-900">{selectedEvalCase.policyUsed}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Prompt Version:</span>
+              <span className="text-slate-500">Rule Version:</span>
               <span className="font-bold text-slate-900">{selectedEvalCase.promptVersion}</span>
             </div>
             <div className="flex justify-between">
@@ -84,7 +98,7 @@ export const EvalFailureModal: React.FC = () => {
           </div>
         </div>
 
-        {/* Footer Actions (Section 15: Assign, Create Fix, Retest) */}
+        {/* Footer Actions */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
           <button
             onClick={() => setIsEvalModalOpen(false)}
@@ -95,30 +109,42 @@ export const EvalFailureModal: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => notify('Assigned to Compliance Admin (Priya Sharma).', 'info')}
+              onClick={() =>
+                notify(`Eval failure routed to ${selectedEvalCase.owner} in Policy Governance queue.`, 'info')
+              }
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1.5"
             >
               <UserCheck className="w-3.5 h-3.5" />
-              <span>Assign</span>
-            </button>
-
-            <button
-              onClick={() => notify('Draft fix created in Rule Test Lab.', 'info')}
-              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1.5"
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>Create Fix</span>
+              <span>Notify Owner</span>
             </button>
 
             <button
               onClick={() => {
-                notify('Retested case against candidate rule in sandbox.', 'success');
                 setIsEvalModalOpen(false);
+                setCurrentScreen('rule_builder');
+                notify('Opened Rule Builder to adjust rule parameter configuration.', 'info');
               }}
-              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1.5"
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              <span>Edit Rule</span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (!canTest.allowed) {
+                  notify(canTest.reason, 'error');
+                  return;
+                }
+                runDraftRuleTestLab('RULE-CA-PHARM-DRAFT');
+                setIsEvalModalOpen(false);
+                setCurrentScreen('rule_test_lab');
+              }}
+              disabled={!canTest.allowed}
+              className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-45 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-xs"
             >
               <Play className="w-3.5 h-3.5" />
-              <span>Retest Case</span>
+              <span>Retest in Rule Test Lab</span>
             </button>
           </div>
         </div>

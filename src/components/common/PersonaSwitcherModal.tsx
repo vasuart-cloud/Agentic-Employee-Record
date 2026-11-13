@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { USER_PERSONAS } from '../../data/mockData';
 import { UserRoleId } from '../../types';
@@ -11,6 +11,15 @@ export const PersonaSwitcherModal: React.FC = () => {
     switchRole,
     setIsDemoGuideOpen
   } = useApp();
+
+  useEffect(() => {
+    if (!isWelcomeModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsWelcomeModalOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isWelcomeModalOpen, setIsWelcomeModalOpen]);
 
   if (!isWelcomeModalOpen) return null;
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canPerformAction } from './authorization';
 import {
+  buildRequirementsForWorkerAssignments,
   checkRuleApplicabilityForAssignment,
   computeRuleSnapshotHash,
   daysBetweenDates,
@@ -25,6 +26,7 @@ import {
   EmploymentAssignment,
   EvidenceItem,
   HRMSMirrorRecord,
+  ROIModelAssumption,
   RuleDefinition,
   SyncTransaction,
   TestFixture,
@@ -463,4 +465,186 @@ test('MockWorkdayAdapter retries only the selected failed transaction and update
 test('Date-safe calculation computes reproducible expired license duration and preboarding days-to-start', () => {
   assert.equal(daysBetweenDates('2026-09-15', DEMO_REFERENCE_DATE), 58);
   assert.equal(daysBetweenDates(DEMO_REFERENCE_DATE, '2026-11-19'), 7);
+});
+
+test('buildRequirementsForWorkerAssignments derives applicable state/role requirements for cross-state transfers', () => {
+  const caNurseTransferAssignment: EmploymentAssignment = {
+    id: 'ASN-TX-CA-01',
+    workerId: SAMPLE_WORKER.id,
+    facilityId: 'FAC-CA-CRC',
+    facilityName: 'California Clinical Research Center',
+    state: 'California',
+    department: 'R&D/Clinical Operations',
+    jobProfile: 'Clinical Research Pharmacist',
+    workerType: 'Permanent',
+    effectiveStartDate: '2026-11-12',
+    isPrimary: true,
+    isClinicalDuty: true
+  };
+
+  const derived = buildRequirementsForWorkerAssignments(
+    SAMPLE_WORKER,
+    [caNurseTransferAssignment],
+    [SAMPLE_RULE],
+    [],
+    [],
+    [],
+    DEMO_REFERENCE_DATE
+  );
+
+  assert.equal(derived.length, 1);
+  assert.equal(derived[0].ruleCode, 'LIC-CA-RPH');
+  assert.equal(derived[0].documentState, 'MISSING');
+  assert.equal(derived[0].verificationState, 'NOT_STARTED');
+});
+
+test('Negative PSV outcomes (VERIFICATION_FAILED and UNVERIFIED) block closure and keep worker incomplete', () => {
+  const req: CredentialRequirement = {
+    requirementId: 'REQ-LIC-NEG',
+    workerId: SAMPLE_WORKER.id,
+    assignmentId: 'ASN-1',
+    ruleId: SAMPLE_RULE.id,
+    ruleCode: SAMPLE_RULE.ruleCode,
+    name: 'CA Pharmacist License',
+    category: 'Statutory Licensure',
+    applicabilityOutcome: 'REQUIRED',
+    verificationMethod: 'PRIMARY_SOURCE_VERIFICATION',
+    documentState: 'REVIEW_REQUIRED',
+    verificationState: 'PENDING_SOURCE_CHECK',
+    dueDate: '2026-11-12',
+    lastEvaluatedAt: '2026-11-12'
+  };
+
+  const baseCase: ComplianceCase = {
+    id: 'CASE-NEG-1',
+    caseNumber: 'CASE-2026-NEG1',
+    workerId: SAMPLE_WORKER.id,
+    workerName: SAMPLE_WORKER.name,
+    assignmentId: 'ASN-1',
+    facilityId: 'FAC-CA-CRC',
+    facilityName: 'California Clinical Research Center',
+    department: 'R&D/Clinical Operations',
+    role: 'Clinical Research Pharmacist',
+    state: 'California',
+    requirementId: req.requirementId,
+    ruleId: SAMPLE_RULE.id,
+    ruleVersion: 'v3.8',
+    caseCategory: 'Expired License',
+    severity: 'Critical',
+    title: 'Expired License',
+    findingSummary: 'Expired',
+    workflowState: 'verification_pending',
+    documentState: 'REVIEW_REQUIRED',
+    verificationState: 'PENDING_SOURCE_CHECK',
+    clinicalEligibilityState: 'REVIEW_REQUIRED',
+    externalSyncState: 'NOT_REQUIRED',
+    detectedDate: '2026-11-12',
+    dueDate: '2026-11-12',
+    clinicalRiskOwner: 'Alex Morgan',
+    hrOutreachOwner: 'Maya',
+    repositoriesSearched: ['Workday'],
+    whyFlagged: {
+      policyName: 'Policy',
+      policyVersion: 'v3.8',
+      policyEffectiveDate: '2026-01-15',
+      clause: '4.1',
+      clauseText: 'Must be active',
+      requirementText: 'CA License',
+      inspectedSource: 'Workday',
+      sourceAsOfTimestamp: '2026-11-12',
+      foundEvidenceSummary: 'Pending',
+      alternativesAccepted: ['CA License'],
+      extractionConfidence: 96,
+      confidenceDisclaimer: 'Extraction only',
+      uncertaintyNote: 'PSV required',
+      whyAuthoritativeVerificationRequired: 'Board required',
+      agentRunId: 'RUN-1'
+    },
+    reviewDecisions: []
+  };
+
+  for (const negativeStatus of ['VERIFICATION_FAILED', 'UNVERIFIED'] as const) {
+    const res = applyPrimarySourceVerificationResult('cred_alex', baseCase, req, {
+      id: `VER-${negativeStatus}`,
+      workerId: SAMPLE_WORKER.id,
+      requirementId: req.requirementId,
+      method: 'PRIMARY_SOURCE_VERIFICATION',
+      sourceName: 'CA Board Demo',
+      sourceTypeLabel: 'Simulated Board',
+      licenseNumberChecked: 'RPH-84920',
+      employeeNameMatched: true,
+      returnedStatus: negativeStatus,
+      checkedAt: '2026-11-12',
+      verifierName: 'Alex Morgan',
+      verifierRole: 'Credentialing Reviewer',
+      receiptReference: `REC-${negativeStatus}`,
+      isSimulated: true
+    });
+    assert.equal(res.valid, true);
+    assert.equal(res.updatedCase?.verificationState, negativeStatus);
+    assert.notEqual(res.updatedCase?.verificationState, 'VERIFIED_ACTIVE');
+    const closeAttempt = validateCaseClosure('hr_ops_maya', res.updatedCase!, SAMPLE_RULE, SAMPLE_WORKER);
+    assert.equal(closeAttempt.valid, false);
+  }
+});
+
+test('Worker stays INCOMPLETE_AMBER after administrative case closure until Clinical Eligibility is authorized', () => {
+  const verifiedReq: CredentialRequirement = {
+    requirementId: 'REQ-LIC-OK',
+    workerId: SAMPLE_WORKER.id,
+    assignmentId: 'ASN-1',
+    ruleId: SAMPLE_RULE.id,
+    ruleCode: SAMPLE_RULE.ruleCode,
+    name: 'CA Pharmacist License',
+    category: 'Statutory Licensure',
+    applicabilityOutcome: 'REQUIRED',
+    verificationMethod: 'PRIMARY_SOURCE_VERIFICATION',
+    documentState: 'ACCEPTED',
+    verificationState: 'VERIFIED_ACTIVE',
+    dueDate: '2026-11-12',
+    lastEvaluatedAt: '2026-11-12'
+  };
+
+  const summaryPendingClinical = computeWorkerReadiness(
+    { ...SAMPLE_WORKER, clinicalEligibility: 'REVIEW_REQUIRED' },
+    [verifiedReq],
+    [],
+    DEMO_REFERENCE_DATE
+  );
+  assert.equal(summaryPendingClinical.readinessPercent, 100);
+  assert.equal(summaryPendingClinical.overallStatus, 'INCOMPLETE_AMBER');
+  assert.equal(summaryPendingClinical.overallStatusLabel, 'Clinical Eligibility Review Pending');
+
+  const summaryAuthorized = computeWorkerReadiness(
+    { ...SAMPLE_WORKER, clinicalEligibility: 'AUTHORIZED_BY_DESIGNATED_LEADER' },
+    [verifiedReq],
+    [],
+    DEMO_REFERENCE_DATE
+  );
+  assert.equal(summaryAuthorized.overallStatus, 'READY');
+});
+
+test('ROI calculation separates full-year capacity value from realizable cash value and net savings', () => {
+  const assumptions: ROIModelAssumption = {
+    monthlyExceptionVolume: 120,
+    baselineManualMinutesPerCase: 45,
+    assistedMinutesPerCase: 15,
+    loadedHrHourlyRate: 78,
+    capacityToCashRealizationFactor: 0.35,
+    annualSoftwareSubscriptionCost: 42000,
+    annualImplementationAndIntegrationCost: 18000
+  };
+
+  const minutesSaved = assumptions.baselineManualMinutesPerCase - assumptions.assistedMinutesPerCase;
+  const monthlyHours = Math.round((assumptions.monthlyExceptionVolume * minutesSaved) / 60);
+  const capacityValue = Math.round(monthlyHours * 12 * assumptions.loadedHrHourlyRate);
+  const cashRealizable = Math.round(capacityValue * assumptions.capacityToCashRealizationFactor);
+  const totalCost =
+    assumptions.annualSoftwareSubscriptionCost + assumptions.annualImplementationAndIntegrationCost;
+  const netCash = cashRealizable - totalCost;
+
+  assert.equal(monthlyHours, 60);
+  assert.equal(capacityValue, 56160);
+  assert.ok(cashRealizable < capacityValue);
+  assert.equal(netCash, 19656 - 60000);
 });

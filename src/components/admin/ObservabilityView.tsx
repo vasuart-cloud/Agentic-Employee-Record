@@ -1,29 +1,28 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { AgentTrace } from '../../types';
-import { 
-  Eye, 
-  Activity, 
-  AlertTriangle, 
-  Clock, 
-  DollarSign, 
-  Cpu, 
-  ChevronRight, 
-  AlertOctagon, 
-  FileText,
-  TrendingDown,
-  ShieldAlert,
-  ArrowRight
+import {
+  Eye,
+  AlertTriangle,
+  AlertOctagon,
+  History
 } from 'lucide-react';
 import { HERO_AGENT_TRACE, PRODUCTION_EXCEPTIONS } from '../../data/mockData';
 
 export const ObservabilityView: React.FC = () => {
-  const { 
-    traces, 
-    setSelectedTrace, 
-    setIsTraceModalOpen, 
-    setIsKillSwitchModalOpen 
+  const {
+    traces,
+    auditEvents,
+    syncTransactions,
+    setSelectedTrace,
+    setIsTraceModalOpen,
+    setIsKillSwitchModalOpen,
+    can,
+    notify
   } = useApp();
+
+  const killAuth = can('TRIGGER_KILL_SWITCH');
+  const failedSyncsCount = syncTransactions.filter((t) => t.status === 'FAILED').length;
 
   const handleRowClick = (trace: AgentTrace) => {
     setSelectedTrace(trace);
@@ -35,14 +34,19 @@ export const ObservabilityView: React.FC = () => {
       {/* Observability Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <div className="text-[10px] font-mono font-bold text-teal-700 uppercase tracking-widest block mb-0.5">
-            PRODUCTION TELEMETRY & EXECUTION TRACES
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[10px] font-mono font-bold text-teal-700 uppercase tracking-widest">
+              EXECUTION TRACES &amp; BENCHMARK TELEMETRY
+            </span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800">
+              Illustrative Synthetic Benchmark + Live Session Events
+            </span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             Agent Observability
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Understand what every agent is doing in production. Monitor latency, tokens, cost, confidence and exceptions.
+            Inspect modeled agent execution steps, policy citations, latency breakdowns, and live session actions.
           </p>
         </div>
 
@@ -54,46 +58,48 @@ export const ObservabilityView: React.FC = () => {
           className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs"
         >
           <Eye className="w-3.5 h-3.5" />
-          <span>Inspect Hero Trace (AGT-839218)</span>
+          <span>Inspect Hero Trace ({HERO_AGENT_TRACE.id})</span>
         </button>
       </div>
 
-      {/* Top Metrics Cards (Section 17) */}
+      {/* Top Metrics Cards (Illustrative Benchmark + Live Session Counters) */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5">
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Agent Runs</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Runs (30d Model)</div>
           <div className="text-2xl font-bold text-slate-900 font-mono mt-1">148.5K</div>
-          <div className="text-[11px] text-emerald-600 font-semibold mt-1">+18% MoM</div>
+          <div className="text-[11px] text-slate-500 mt-1">Synthetic benchmark</div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Success Rate</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Rule Match Rate</div>
           <div className="text-2xl font-bold text-emerald-700 font-mono mt-1">96.8%</div>
-          <div className="text-[11px] text-slate-500 mt-1">Rule validated</div>
+          <div className="text-[11px] text-slate-500 mt-1">Modeled baseline</div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Errors</div>
-          <div className="text-2xl font-bold text-slate-700 font-mono mt-1">1.4%</div>
-          <div className="text-[11px] text-emerald-600 font-semibold mt-1">Within SLA</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Sync Failures (Live)</div>
+          <div className={`text-2xl font-bold font-mono mt-1 ${failedSyncsCount > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+            {failedSyncsCount}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">Workday staging queue</div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Human Escalations</div>
-          <div className="text-2xl font-bold text-amber-700 font-mono mt-1">7.2%</div>
-          <div className="text-[11px] text-slate-500 mt-1">Low-conf routing</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Session Events (Live)</div>
+          <div className="text-2xl font-bold text-teal-800 font-mono mt-1">{auditEvents.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1">Local browser log</div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Median Latency</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Median Latency (Model)</div>
           <div className="text-2xl font-bold text-slate-900 font-mono mt-1">1.9 sec</div>
           <div className="text-[11px] text-slate-500 mt-1">P95: 2.8 sec</div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Monthly AI Cost</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase font-mono">Monthly AI Cost (Model)</div>
           <div className="text-2xl font-bold text-slate-900 font-mono mt-1">$1,842</div>
-          <div className="text-[10px] text-slate-500 mt-1">$0.012 / run avg</div>
+          <div className="text-[10px] text-slate-500 mt-1">$0.012 / run modeled</div>
         </div>
       </div>
 
@@ -101,13 +107,13 @@ export const ObservabilityView: React.FC = () => {
       <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-2">
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Live Agent Invocations & Execution Traces</h2>
+            <h2 className="text-sm font-bold text-slate-900">Sample Agent Invocations &amp; Execution Traces</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Click any trace row to inspect system execution steps, documents searched, latency breakdown, and policy versions.
+              Click any trace row to inspect system execution steps, repositories searched, latency breakdown, and policy versions.
             </p>
           </div>
-          <span className="text-xs text-teal-800 font-bold bg-teal-50 px-2.5 py-1 rounded border border-teal-200">
-            Real-Time Stream
+          <span className="text-xs text-amber-800 font-bold bg-amber-50 px-2.5 py-1 rounded border border-amber-200">
+            Simulated Demo Traces
           </span>
         </div>
 
@@ -129,44 +135,35 @@ export const ObservabilityView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 font-mono">
               {traces.map((tr) => (
-                <tr 
-                  key={tr.id} 
+                <tr
+                  key={tr.id}
                   onClick={() => handleRowClick(tr)}
                   className="hover:bg-slate-50 cursor-pointer transition-colors"
                 >
-                  <td className="py-3 px-4 text-slate-500">
-                    {tr.timestamp}
-                  </td>
-                  <td className="py-3 px-4 font-bold text-teal-800 font-sans">
-                    {tr.agentName}
-                  </td>
+                  <td className="py-3 px-4 text-slate-500">{tr.timestamp}</td>
+                  <td className="py-3 px-4 font-bold text-teal-800 font-sans">{tr.agentName}</td>
                   <td className="py-3 px-4 font-sans text-slate-800">
                     <span className="font-semibold block">{tr.employeeName}</span>
                     <span className="text-[11px] text-slate-400 font-mono">{tr.employeeId}</span>
                   </td>
-                  <td className="py-3 px-4 font-sans text-slate-700">
-                    {tr.action}
-                  </td>
-                  <td className="py-3 px-4 text-slate-700">
-                    {tr.latencySec}s
-                  </td>
-                  <td className="py-3 px-4 text-slate-700">
-                    {tr.tokenCount.toLocaleString()}
-                  </td>
-                  <td className="py-3 px-4 text-slate-700">
-                    ${tr.costUsd.toFixed(3)}
-                  </td>
+                  <td className="py-3 px-4 font-sans text-slate-700">{tr.action}</td>
+                  <td className="py-3 px-4 text-slate-700">{tr.latencySec}s</td>
+                  <td className="py-3 px-4 text-slate-700">{tr.tokenCount.toLocaleString()}</td>
+                  <td className="py-3 px-4 text-slate-700">${tr.costUsd.toFixed(3)}</td>
                   <td className="py-3 px-4">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
-                      tr.outcome === 'Flag' ? 'bg-rose-100 text-rose-800' :
-                      tr.outcome === 'Escalate' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                    }`}>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                        tr.outcome === 'Flag'
+                          ? 'bg-rose-100 text-rose-800'
+                          : tr.outcome === 'Escalate'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}
+                    >
                       {tr.outcome}
                     </span>
                   </td>
-                  <td className="py-3 px-4 font-bold text-teal-700">
-                    {tr.confidence}%
-                  </td>
+                  <td className="py-3 px-4 font-bold text-teal-700">{tr.confidence}%</td>
                   <td className="py-3 px-4 text-right">
                     <button
                       onClick={(e) => {
@@ -185,23 +182,56 @@ export const ObservabilityView: React.FC = () => {
         </div>
       </div>
 
+      {/* Live Session Events Strip */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-teal-700" />
+            <h2 className="text-sm font-bold text-slate-900">Recent Session Actions (Live In-Browser Feed)</h2>
+          </div>
+          <span className="text-[11px] font-mono text-slate-500">Latest 6 events</span>
+        </div>
+        <div className="divide-y divide-slate-100 text-xs">
+          {auditEvents.slice(0, 6).map((evt) => (
+            <div key={evt.eventId} className="py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="font-mono font-bold text-teal-800">{evt.action}</span>
+                <span className="text-slate-400 mx-1.5">·</span>
+                <span className="text-slate-700">{evt.details}</span>
+              </div>
+              <div className="text-[11px] font-mono text-slate-500 shrink-0">
+                {evt.actor} · {evt.timestamp}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* SECTION 19: ERROR & EXCEPTION MONITORING */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <span>Production Exceptions & Anomalies</span>
+              <span>Modeled Exception Categories</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Automated anomaly triage routing issues before they impact employee file completeness.
+              Illustrative enterprise anomaly distribution routing low-confidence or board exceptions to human queues.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsKillSwitchModalOpen(true)}
-              className="px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5"
+              onClick={() => {
+                if (!killAuth.allowed) {
+                  notify(killAuth.reason, 'error');
+                  return;
+                }
+                setIsKillSwitchModalOpen(true);
+              }}
+              disabled={!killAuth.allowed}
+              title={killAuth.allowed ? 'Open Emergency Kill Switch' : killAuth.reason}
+              className="px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 disabled:opacity-45 disabled:cursor-not-allowed font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5"
             >
               <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
               <span>Emergency Kill Switch</span>
@@ -210,14 +240,12 @@ export const ObservabilityView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {PRODUCTION_EXCEPTIONS.map((exc: any, idx: number) => (
+          {PRODUCTION_EXCEPTIONS.map((exc, idx) => (
             <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
               <span className="text-[10px] text-slate-500 block uppercase font-mono truncate" title={exc.type}>
                 {exc.type}
               </span>
-              <div className="text-xl font-bold font-mono text-slate-900">
-                {exc.count}
-              </div>
+              <div className="text-xl font-bold font-mono text-slate-900">{exc.count}</div>
               <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-200">
                 <span className={`font-bold ${exc.severity === 'Critical' ? 'text-rose-700' : 'text-slate-600'}`}>
                   {exc.severity}

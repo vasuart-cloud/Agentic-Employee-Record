@@ -1,29 +1,49 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { AlertOctagon, X, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { AlertOctagon, X } from 'lucide-react';
 
 export const KillSwitchModal: React.FC = () => {
-  const { 
-    isKillSwitchModalOpen, 
-    setIsKillSwitchModalOpen, 
-    triggerKillSwitch 
+  const {
+    isKillSwitchModalOpen,
+    setIsKillSwitchModalOpen,
+    triggerKillSwitch,
+    can,
+    notify
   } = useApp();
 
   const [reason, setReason] = useState('Incorrect compliance decisions');
   const [typedConfirmation, setTypedConfirmation] = useState('');
 
+  useEffect(() => {
+    if (!isKillSwitchModalOpen) {
+      setTypedConfirmation('');
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsKillSwitchModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isKillSwitchModalOpen, setIsKillSwitchModalOpen]);
+
   if (!isKillSwitchModalOpen) return null;
 
+  const killAuth = can('TRIGGER_KILL_SWITCH');
   const isConfirmed = typedConfirmation.trim() === 'STOP AGENT';
 
   const handleConfirm = () => {
+    if (!killAuth.allowed) {
+      notify(killAuth.reason, 'error');
+      return;
+    }
     if (!isConfirmed) return;
     triggerKillSwitch(reason);
+    setTypedConfirmation('');
   };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-      <div 
+      <div
         className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs"
         onClick={() => setIsKillSwitchModalOpen(false)}
       />
@@ -39,9 +59,7 @@ export const KillSwitchModal: React.FC = () => {
               <div className="text-[10px] font-mono font-bold text-rose-700 uppercase">
                 EMERGENCY CIRCUIT BREAKER
               </div>
-              <h2 className="text-lg font-bold text-rose-950">
-                Stop Compliance Agent?
-              </h2>
+              <h2 className="text-lg font-bold text-rose-950">Stop Compliance Agent?</h2>
             </div>
           </div>
 
@@ -55,12 +73,18 @@ export const KillSwitchModal: React.FC = () => {
 
         {/* Modal Body */}
         <div className="p-6 space-y-4">
+          {!killAuth.allowed && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 font-semibold">
+              {killAuth.reason}
+            </div>
+          )}
+
           <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 space-y-2">
             <span className="font-bold block">This action immediately prevents:</span>
             <ul className="list-disc list-inside space-y-1 text-slate-700">
               <li>New compliance evaluations across all connected worker files</li>
-              <li>New automated workflow actions and queue triggers</li>
-              <li>New remediation task and outreach generation</li>
+              <li>New automated workflow actions and outreach approvals</li>
+              <li>New Workday staging writeback pushes</li>
             </ul>
             <div className="text-[11px] text-slate-600 pt-1 border-t border-rose-200">
               Existing cases remain available in Workday and read-only HR queues.
@@ -110,8 +134,8 @@ export const KillSwitchModal: React.FC = () => {
 
           <button
             onClick={handleConfirm}
-            disabled={!isConfirmed}
-            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+            disabled={!isConfirmed || !killAuth.allowed}
+            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
           >
             <AlertOctagon className="w-4 h-4" />
             <span>Confirm Emergency Stop</span>

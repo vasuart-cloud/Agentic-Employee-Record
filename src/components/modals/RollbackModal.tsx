@@ -1,19 +1,33 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { RotateCcw, X, AlertTriangle } from 'lucide-react';
+import { RotateCcw, X } from 'lucide-react';
 
 export const RollbackModal: React.FC = () => {
-  const { 
-    isRollbackModalOpen, 
-    setIsRollbackModalOpen, 
-    rollbackToVersion 
+  const {
+    isRollbackModalOpen,
+    setIsRollbackModalOpen,
+    rollbackToVersion,
+    currentPersona,
+    can,
+    notify
   } = useApp();
+
+  useEffect(() => {
+    if (!isRollbackModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsRollbackModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isRollbackModalOpen, setIsRollbackModalOpen]);
 
   if (!isRollbackModalOpen) return null;
 
+  const rollbackAuth = can('CREATE_DRAFT_RULE');
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
-      <div 
+      <div
         className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs"
         onClick={() => setIsRollbackModalOpen(false)}
       />
@@ -23,7 +37,7 @@ export const RollbackModal: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <RotateCcw className="w-5 h-5 text-amber-700" />
             <h2 className="text-base font-bold text-slate-900">
-              Confirm Rollback to Version v2.3?
+              Confirm Rollback to Baseline v3.8?
             </h2>
           </div>
           <button
@@ -36,13 +50,19 @@ export const RollbackModal: React.FC = () => {
 
         <div className="p-6 space-y-3">
           <p className="text-slate-700 leading-relaxed">
-            This will immediately demote <strong>Compliance Agent v2.4</strong> and activate <strong>Version v2.3</strong> as the production baseline across all connected employee files.
+            This will restore <strong>RULE-CA-PHARM-01 (LIC-CA-RPH)</strong> to baseline <strong>v3.8</strong> and supersede any unapproved candidate snapshot in local demo state.
           </p>
 
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-[11px] text-slate-600 space-y-1">
-            <div>Target Version: <strong className="text-slate-900">v2.3 (Tested & Certified)</strong></div>
-            <div>Model: <strong className="text-slate-900">gemini-1.5-pro-governed-enterprise</strong></div>
-            <div>Approved by: <strong className="text-teal-800">Priya Sharma</strong></div>
+            <div>
+              Target Rule Snapshot: <strong className="text-slate-900">LIC-CA-RPH v3.8 (Test Lab Verified)</strong>
+            </div>
+            <div>
+              Rule Engine: <strong className="text-slate-900">Deterministic Healthcare Policy Engine</strong>
+            </div>
+            <div>
+              Requested by: <strong className="text-teal-800">{currentPersona.name}</strong>
+            </div>
           </div>
         </div>
 
@@ -55,8 +75,16 @@ export const RollbackModal: React.FC = () => {
           </button>
 
           <button
-            onClick={() => rollbackToVersion('v2.3')}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5"
+            onClick={() => {
+              if (!rollbackAuth.allowed) {
+                notify(rollbackAuth.reason, 'error');
+                return;
+              }
+              rollbackToVersion('v3.8');
+            }}
+            disabled={!rollbackAuth.allowed}
+            title={rollbackAuth.allowed ? 'Confirm rollback to v3.8' : rollbackAuth.reason}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-45 disabled:cursor-not-allowed text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Confirm Rollback</span>

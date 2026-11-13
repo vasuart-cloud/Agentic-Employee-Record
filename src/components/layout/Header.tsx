@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { USER_PERSONAS } from '../../data/mockData';
 import { DemoScenarioId, UserRoleId } from '../../types';
@@ -12,6 +12,7 @@ import {
   Menu,
   AlertOctagon,
   UserCheck,
+  Bell,
   X
 } from 'lucide-react';
 
@@ -56,9 +57,12 @@ export const Header: React.FC = () => {
     organization,
     workers,
     cases,
+    rules,
+    syncTransactions,
     openWorkerDossier,
     launchDemoScenario,
     activeScenarioId,
+    resetScenario,
     resetDemoData,
     setIsDemoGuideOpen,
     setIsMobileSidebarOpen,
@@ -70,11 +74,13 @@ export const Header: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const searchRef = useRef<HTMLDivElement>(null);
   const scenarioRef = useRef<HTMLDivElement>(null);
   const roleRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -84,10 +90,88 @@ export const Header: React.FC = () => {
         setConfirmReset(false);
       }
       if (roleRef.current && !roleRef.current.contains(e.target as Node)) setRoleOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setScenarioOpen(false);
+        setRoleOpen(false);
+        setNotifOpen(false);
+        setConfirmReset(false);
+      }
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
+
+  const notifications = useMemo(() => {
+    const items: { id: string; badge: string; tone: string; title: string; detail: string; onClick: () => void }[] = [];
+
+    cases
+      .filter(
+        (c) =>
+          c.workflowState !== 'resolved' &&
+          (c.clinicalEligibilityState === 'REVIEW_REQUIRED' || c.escalation?.status === 'PENDING_REVIEW')
+      )
+      .slice(0, 4)
+      .forEach((c) => {
+        items.push({
+          id: `esc-${c.id}`,
+          badge: 'Clinical Escalation',
+          tone: 'bg-rose-50 text-rose-800 border-rose-200',
+          title: `${c.workerName} · ${c.caseNumber}`,
+          detail: c.title,
+          onClick: () => openWorkerDossier(c.workerId, c.id)
+        });
+      });
+
+    syncTransactions
+      .filter((t) => t.status === 'FAILED')
+      .forEach((tx) => {
+        items.push({
+          id: `tx-${tx.id}`,
+          badge: `Workday HTTP ${tx.httpStatus || 504}`,
+          tone: 'bg-amber-50 text-amber-800 border-amber-200',
+          title: `${tx.workerName || tx.connectorName} · ${tx.id}`,
+          detail: 'Outbound staging writeback requires scoped retry',
+          onClick: () => setCurrentScreen('integrations')
+        });
+      });
+
+    cases
+      .filter((c) => c.workflowState !== 'resolved' && c.documentState === 'REVIEW_REQUIRED')
+      .slice(0, 3)
+      .forEach((c) => {
+        items.push({
+          id: `rev-${c.id}`,
+          badge: 'Upload Needs Review',
+          tone: 'bg-teal-50 text-teal-800 border-teal-200',
+          title: `${c.workerName} · ${c.caseNumber}`,
+          detail: 'Employee portal submission awaiting PSV / HR review',
+          onClick: () => openWorkerDossier(c.workerId, c.id)
+        });
+      });
+
+    rules
+      .filter((r) => r.status === 'Pending Approval')
+      .forEach((r) => {
+        items.push({
+          id: `rule-${r.id}`,
+          badge: 'Pending Sign-Off',
+          tone: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+          title: `${r.ruleCode} (${r.version})`,
+          detail: 'Awaiting independent approval by Alex Morgan',
+          onClick: () => setCurrentScreen('rule_versions')
+        });
+      });
+
+    return items;
+  }, [cases, syncTransactions, rules, openWorkerDossier, setCurrentScreen]);
 
   const filteredWorkers = searchQuery.trim()
     ? workers
@@ -240,11 +324,11 @@ export const Header: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Kill Switch Alert, Demo Scenarios, Demo Guide (?), Persona Switcher */}
+      {/* Right: Kill Switch Alert, Demo Scenarios, Notifications, Demo Guide (?), Persona Switcher */}
       <div className="flex items-center gap-2 shrink-0">
         {killSwitchState.isTriggered && (
           <button
-            onClick={() => setCurrentScreen('ai_governance')}
+            onClick={() => setCurrentScreen('guardrails')}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 text-xs font-semibold hover:bg-rose-100"
           >
             <AlertOctagon className="w-3.5 h-3.5" />
@@ -291,7 +375,20 @@ export const Header: React.FC = () => {
                 })}
               </div>
 
-              <div className="pt-2 mt-1 border-t border-slate-100 px-1.5">
+              <div className="pt-2 mt-1 border-t border-slate-100 px-1.5 space-y-1.5">
+                {activeScenarioId && (
+                  <button
+                    onClick={() => {
+                      resetScenario(activeScenarioId);
+                      setScenarioOpen(false);
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-teal-200 bg-teal-50/70 text-teal-800 hover:bg-teal-100 font-semibold"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Active Scenario Only</span>
+                  </button>
+                )}
+
                 {!confirmReset ? (
                   <button
                     onClick={() => setConfirmReset(true)}
@@ -324,6 +421,60 @@ export const Header: React.FC = () => {
                       </button>
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Notifications Bell Popover */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setNotifOpen((o) => !o)}
+            className="relative p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+            title="Operational Notifications & Escalations"
+            aria-label="Open notifications"
+          >
+            <Bell className="w-4 h-4" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                {notifications.length}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <div className="absolute right-0 mt-1.5 w-80 sm:w-96 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 text-xs">
+              <div className="px-2.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
+                <span className="font-semibold text-slate-900">Actionable Exceptions &amp; Alerts</span>
+                <span className="text-[10px] font-mono text-slate-500 tabular-nums">
+                  {notifications.length} active
+                </span>
+              </div>
+              <div className="py-1 space-y-1 max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-slate-500">
+                    No active escalations, failed syncs, or pending approvals.
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        n.onClick();
+                        setNotifOpen(false);
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-50 space-y-1 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-900 truncate">{n.title}</span>
+                        <span className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold shrink-0 ${n.tone}`}>
+                          {n.badge}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 truncate">{n.detail}</div>
+                    </button>
+                  ))
                 )}
               </div>
             </div>

@@ -106,6 +106,7 @@ export interface UploadedFilePreview {
   objectUrl: string;
   fileName: string;
   mimeType: string;
+  textSnippet?: string;
 }
 
 export interface EmployeePortalSubmitPayload {
@@ -140,6 +141,7 @@ interface AppContextType {
   setIsMobileSidebarOpen: (open: boolean) => void;
   activeScenarioId: DemoScenarioId | null;
   launchDemoScenario: (scenarioId: DemoScenarioId) => void;
+  resetScenario: (scenarioId: DemoScenarioId) => void;
 
   // Notifications
   toasts: ToastNotice[];
@@ -172,6 +174,7 @@ interface AppContextType {
   runDraftRuleTestLab: (ruleId: string) => TestRun | null;
   submitRuleForApproval: (ruleId: string) => { ok: boolean; message: string };
   approveAndPublishRule: (ruleId: string, notes: string) => { ok: boolean; message: string };
+  rejectRuleVersion: (ruleId: string, notes: string) => { ok: boolean; message: string };
   rollbackRuleVersion: (ruleId: string, targetVersion: string) => void;
 
   // Requirements, Evidence, PSV & Cases
@@ -196,7 +199,7 @@ interface AppContextType {
   submitEmployeePortalResponse: (
     caseId: string,
     payload: EmployeePortalSubmitPayload
-  ) => { ok: boolean; message: string };
+  ) => Promise<{ ok: boolean; message: string; trackingId?: string }>;
   runPrimarySourceVerification: (
     caseId: string,
     fixtureOutcome: 'VERIFIED_ACTIVE' | 'RESTRICTED' | 'VERIFICATION_FAILED' | 'UNVERIFIED'
@@ -318,7 +321,7 @@ interface AppContextType {
   setReleaseGateApproved: (approved: boolean) => void;
   isSandboxRunning: boolean;
   sandboxTestResult: 'idle' | 'running' | 'completed';
-  runSandboxTest: () => void;
+  runSandboxTest: (ruleId?: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -353,12 +356,50 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
   const saved = useMemo(() => loadSaved(), []);
 
-  const [activeRoleId, setActiveRoleId] = useState<UserRoleId>(
-    saved?.activeRoleId || 'hr_ops_maya'
-  );
-  const [currentScreen, setCurrentScreen] = useState<NavigationScreen>(
-    saved?.currentScreen || 'weekly_overview'
-  );
+  const initialRoleId: UserRoleId =
+    saved?.activeRoleId && USER_PERSONAS[saved.activeRoleId as UserRoleId]
+      ? (saved.activeRoleId as UserRoleId)
+      : 'hr_ops_maya';
+  const [activeRoleId, setActiveRoleId] = useState<UserRoleId>(initialRoleId);
+
+  const validScreens = new Set<NavigationScreen>([
+    'weekly_overview',
+    'employees',
+    'employee_records',
+    'compliance_cases',
+    'credential_verification',
+    'tasks',
+    'employee_requests',
+    'audit_packets',
+    'analytics',
+    'policy_library',
+    'rule_builder',
+    'rule_test_lab',
+    'rule_versions',
+    'ai_governance',
+    'command_center',
+    'agents',
+    'agent_detail',
+    'agent_workflows',
+    'evals',
+    'observability',
+    'guardrails',
+    'settings',
+    'integrations',
+    'audit_access',
+    'users_roles',
+    'audit_logs',
+    'executive_overview',
+    'risk_by_facility',
+    'readiness_trends',
+    'pilot_scorecard',
+    'business_value'
+  ]);
+  const initialScreen: NavigationScreen =
+    saved?.currentScreen && validScreens.has(saved.currentScreen as NavigationScreen)
+      ? (saved.currentScreen as NavigationScreen)
+      : getDefaultScreenForRole(initialRoleId);
+  const [currentScreen, setCurrentScreen] = useState<NavigationScreen>(initialScreen);
   const [currentEnvironment, setCurrentEnvironment] = useState<EnvironmentType>(
     'Demo Sandbox (Simulated)'
   );
@@ -498,7 +539,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     externalWeb: false
   });
   const toggleDataSource = (key: keyof AppContextType['dataSources']) => {
+    const check = can('CREATE_DRAFT_RULE');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
+    if (key === 'externalWeb') {
+      notify('External Internet Web remains permanently blocked by healthcare data guardrails.', 'error');
+      return;
+    }
     setDataSources((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  const setBoundedComplianceAutonomy = (level: AutonomyLevel) => {
+    const check = can('CREATE_DRAFT_RULE');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
+    if (level >= 3) {
+      notify('Autonomy Levels 3 and 4 are prohibited for clinical credentialing and external outreach.', 'error');
+      return;
+    }
+    setComplianceAgentAutonomy(level);
+    notify(`Compliance Agent autonomy updated to Level ${level}.`, 'info');
   };
   const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false);
   const [releaseGateApproved, setReleaseGateApproved] = useState(false);
@@ -594,6 +657,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveRoleId(roleId);
     setCurrentScreen(targetScreen || getDefaultScreenForRole(roleId));
     setIsMobileSidebarOpen(false);
+    setIsEmployeePortalOpen(false);
+    setIsHRMSSyncPayloadModalOpen(false);
+    setIsKillSwitchModalOpen(false);
+    setIsRollbackModalOpen(false);
     const persona = USER_PERSONAS[roleId];
     if (persona) {
       notify(`Switched workspace view to ${persona.name} (${persona.roleLabel}).`, 'info');
@@ -870,6 +937,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { ok: true, message: `Published ${publishedVersion}.` };
   };
 
+  const rejectRuleVersion = (
+    ruleId: string,
+    notes: string
+  ): { ok: boolean; message: string } => {
+    const targetRule = rules.find((r) => r.id === ruleId);
+    if (!targetRule) return { ok: false, message: 'Rule not found.' };
+
+    const check = can('APPROVE_RULE_PUBLICATION', {
+      ruleAuthorName: targetRule.author
+    });
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return { ok: false, message: check.reason };
+    }
+
+    const now = nowTimestampUtc();
+    setRules((prev) =>
+      prev.map((r) =>
+        r.id === ruleId
+          ? {
+              ...r,
+              status: 'Draft',
+              approvalNotes: `Returned to Draft by ${currentPersona.name} (${now}): ${notes}`
+            }
+          : r
+      )
+    );
+    setPolicyVersions((prev) =>
+      prev.map((pv) =>
+        pv.ruleId === ruleId && pv.version === targetRule.version
+          ? {
+              ...pv,
+              status: 'Draft',
+              approvalNotes: `Returned to Draft by ${currentPersona.name}: ${notes}`
+            }
+          : pv
+      )
+    );
+    logAuditEvent({
+      actor: currentPersona.name,
+      actorRole: currentPersona.roleLabel,
+      action: 'RETURN_RULE_TO_DRAFT',
+      category: 'POLICY',
+      source: 'Policy Governance Gate',
+      targetEntityId: ruleId,
+      beforeState: 'Pending Approval',
+      afterState: 'Draft',
+      details: `Independent reviewer ${currentPersona.name} returned ${targetRule.ruleCode} (${targetRule.version}) to Draft. Reason: ${notes}`
+    });
+    notify(`Returned ${targetRule.ruleCode} (${targetRule.version}) to Draft with review notes.`, 'warning');
+    return { ok: true, message: 'Returned to Draft.' };
+  };
+
   const rollbackRuleVersion = (ruleId: string, targetVersion: string) => {
     const check = can('CREATE_DRAFT_RULE');
     if (!check.allowed) {
@@ -1006,10 +1126,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // WORKFLOW 2: Simulated Employee Portal Submission (Upload NEVER equals PSV!)
-  const submitEmployeePortalResponse = (
+  const submitEmployeePortalResponse = async (
     caseId: string,
     payload: EmployeePortalSubmitPayload
-  ): { ok: boolean; message: string } => {
+  ): Promise<{ ok: boolean; message: string; trackingId?: string }> => {
     const targetCase = cases.find((c) => c.id === caseId);
     const targetReq = requirements.find((r) => r.requirementId === targetCase?.requirementId);
     if (!targetCase || !targetReq) {
@@ -1020,28 +1140,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const evId = `EV-${Date.now().toString().slice(-6)}`;
 
     if (payload.mode === 'reply_question') {
-      setThreads((prev) =>
-        prev.map((th) =>
-          th.caseId === caseId
-            ? {
-                ...th,
-                messages: [
-                  ...th.messages,
-                  {
-                    id: `MSG-EMP-${Date.now()}`,
-                    senderType: 'EMPLOYEE',
-                    senderName: targetCase.workerName,
-                    senderRole: 'Employee (Simulated Portal)',
-                    timestamp,
-                    channel: 'Simulated Demo Portal',
-                    content: payload.note,
-                    deliveryStatus: 'Employee Replied'
-                  }
-                ]
-              }
-            : th
-        )
-      );
+      if (!payload.note.trim()) {
+        const msg = 'Please enter a message before sending your reply.';
+        notify(msg, 'warning');
+        return { ok: false, message: msg };
+      }
+      const msgId = `MSG-EMP-${Date.now()}`;
+      setThreads((prev) => {
+        const exists = prev.some((th) => th.caseId === caseId);
+        const msgObj = {
+          id: msgId,
+          senderType: 'EMPLOYEE' as const,
+          senderName: targetCase.workerName,
+          senderRole: 'Employee (Simulated Portal)',
+          timestamp,
+          channel: 'Simulated Demo Portal' as const,
+          content: payload.note,
+          deliveryStatus: 'Employee Replied' as const
+        };
+        if (!exists) {
+          return [
+            ...prev,
+            {
+              id: `THR-${Date.now()}`,
+              caseId,
+              workerId: targetCase.workerId,
+              subject: `Re: ${targetCase.title}`,
+              messages: [msgObj]
+            }
+          ];
+        }
+        return prev.map((th) =>
+          th.caseId === caseId ? { ...th, messages: [...th.messages, msgObj] } : th
+        );
+      });
       setCases((prev) =>
         prev.map((c) =>
           c.id === caseId ? { ...c, workflowState: 'employee_responded' } : c
@@ -1058,10 +1190,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         details: `Employee replied in portal: "${payload.note}"`
       });
       notify(`Employee reply recorded for ${targetCase.workerName}.`, 'info');
-      return { ok: true, message: 'Reply recorded.' };
+      return { ok: true, message: 'Reply recorded.', trackingId: msgId };
     }
 
     if (payload.mode === 'already_submitted_workday') {
+      const msgId = `MSG-EMP-${Date.now()}`;
       setCases((prev) =>
         prev.map((c) =>
           c.id === caseId
@@ -1076,7 +1209,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
       setThreads((prev) => {
         const msg = {
-          id: `MSG-EMP-${Date.now()}`,
+          id: msgId,
           senderType: 'EMPLOYEE' as const,
           senderName: targetCase.workerName,
           senderRole: 'Employee (Simulated Portal)',
@@ -1119,11 +1252,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         `${targetCase.workerName} reported prior Workday submission — flagged for Workday Inbox check.`,
         'warning'
       );
-      return { ok: true, message: 'Flagged for Workday reconciliation.' };
+      return { ok: true, message: 'Flagged for Workday reconciliation.', trackingId: msgId };
     }
 
-    // Actual uploaded file OR 1-click sample renewal submission
+    // Actual uploaded file validation
     const file = payload.file;
+    if (payload.mode === 'file') {
+      if (!file) {
+        const msg = 'Please select a file (.pdf, .jpg, .jpeg, .png, or .txt) before submitting.';
+        notify(msg, 'warning');
+        return { ok: false, message: msg };
+      }
+      const allowedExt = /\.(pdf|jpe?g|png|txt)$/i;
+      if (!allowedExt.test(file.name)) {
+        const msg = 'Unsupported file format. Allowed formats: PDF, JPG, PNG, or TXT.';
+        notify(msg, 'error');
+        return { ok: false, message: msg };
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        const msg = 'File exceeds 5 MB demo upload limit.';
+        notify(msg, 'error');
+        return { ok: false, message: msg };
+      }
+    }
+
     const fileName =
       file?.name ||
       payload.fileName ||
@@ -1134,20 +1286,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? `${Math.max(1, Math.round(file.size / 1024))} KB`
       : payload.fileSize || '342 KB';
     const mimeType = file?.type || payload.mimeType || 'application/pdf';
+    const isTxt = Boolean(file && (mimeType.startsWith('text/') || file.name.toLowerCase().endsWith('.txt')));
 
     if (file) {
+      let textSnippet: string | undefined;
+      if (isTxt) {
+        try {
+          textSnippet = (await file.text()).slice(0, 500);
+        } catch {
+          textSnippet = undefined;
+        }
+      }
       const objectUrl = URL.createObjectURL(file);
       setUploadedFilePreviews((prev) => ({
         ...prev,
-        [evId]: { evidenceId: evId, objectUrl, fileName, mimeType }
+        [evId]: { evidenceId: evId, objectUrl, fileName, mimeType, textSnippet }
       }));
     }
 
     const isActualBrowserFile = Boolean(file);
     const extractionMethodNote = isActualBrowserFile
-      ? mimeType.startsWith('text/')
-        ? 'Browser text file read locally; metadata fields remain unverified pending reviewer inspection.'
-        : 'Browser file attachment captured (binary PDF/image metadata only — no server-side OCR or authenticity check performed in demo).'
+      ? isTxt
+        ? 'Browser text file previewed locally; fields require manual reviewer inspection.'
+        : 'Upload received; structured extraction unavailable in this browser demo; manual review required.'
       : 'Simulated 1-click demo document fixture — requires Primary Source Verification before licensure closure.';
 
     const newEvidence: EvidenceItem = {
@@ -1165,7 +1326,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         payload.licenseNumber ||
         (targetCase.workerId === 'EMP-10419' ? 'RPH-84920' : 'SUB-DEMO-01'),
       issuingJurisdiction: targetCase.state,
-      extractionConfidence: isActualBrowserFile ? 78 : 94,
+      extractionConfidence: isActualBrowserFile ? 75 : 94,
       extractionMethodNote,
       fileSize,
       mimeType,
@@ -1182,7 +1343,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           value: payload.expirationDate || '2028-09-15',
           confidence: isActualBrowserFile ? 75 : 94,
           sourceNotice: isActualBrowserFile
-            ? 'Unverified form input (manual inspection required)'
+            ? 'Manual review required (no server-side OCR)'
             : 'Simulated fixture field — NOT verified against board'
         }
       ]
@@ -1259,7 +1420,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         : `File received (${fileName}). Ready for HR review.`,
       'info'
     );
-    return { ok: true, message: 'Submission recorded.' };
+    return { ok: true, message: 'Submission recorded.', trackingId: evId };
   };
 
   // WORKFLOW 3: Alex Morgan runs Simulated Primary Source Verification
@@ -1729,6 +1890,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetWorker = workers.find((w) => w.id === targetCase?.workerId);
     if (!targetCase || !targetWorker) return null;
 
+    if (targetCase.workflowState !== 'resolved') {
+      notify(
+        'Workday staging writeback blocked: Complete credential verification and administrative case closure before writing summary to Workday.',
+        'error'
+      );
+      return null;
+    }
+
     setCases((prev) =>
       prev.map((c) => (c.id === caseId ? { ...c, externalSyncState: 'IN_PROGRESS' } : c))
     );
@@ -2109,6 +2278,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
 
     setCases((prev) => [...transferCases, ...prev]);
+    setSelectedWorkerId(targetWorker.id);
+    if (transferCases[0]) setSelectedCaseId(transferCases[0].id);
 
     logAuditEvent({
       actor: currentPersona.name,
@@ -2357,11 +2528,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsRollbackModalOpen(false);
   };
 
-  const runSandboxTest = () => {
+  const runSandboxTest = (ruleId = 'RULE-CA-PHARM-DRAFT') => {
+    const check = can('RUN_RULE_SANDBOX_EVAL');
+    if (!check.allowed) {
+      notify(check.reason, 'error');
+      return;
+    }
     setIsSandboxRunning(true);
     setSandboxTestResult('running');
     setTimeout(() => {
-      runDraftRuleTestLab('RULE-CA-PHARM-DRAFT');
+      runDraftRuleTestLab(ruleId);
       setIsSandboxRunning(false);
       setSandboxTestResult('completed');
     }, 350);
@@ -2412,6 +2588,101 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     notify('Demo dataset reset to reproducible baseline (As of 2026-11-12).', 'info');
   };
 
+  // Single-scenario non-destructive reset (restores only entities belonging to that scenario)
+  const resetScenario = (scenarioId: DemoScenarioId) => {
+    const restoreEntitiesForWorkers = (workerIds: string[], caseIds: string[]) => {
+      const workerSet = new Set(workerIds);
+      const caseSet = new Set(caseIds);
+
+      setWorkers((prev) =>
+        prev.map((w) => INITIAL_WORKERS.find((iw) => iw.id === w.id && workerSet.has(iw.id)) || w)
+      );
+      setRequirements((prev) =>
+        prev.map((r) =>
+          workerSet.has(r.workerId)
+            ? INITIAL_REQUIREMENTS.find((ir) => ir.requirementId === r.requirementId) || r
+            : r
+        )
+      );
+      setEvidenceItems((prev) => {
+        const untouched = prev.filter((e) => !workerSet.has(e.workerId));
+        const restored = INITIAL_EVIDENCE_ITEMS.filter((e) => workerSet.has(e.workerId));
+        return [...restored, ...untouched];
+      });
+      setVerifications((prev) => {
+        const untouched = prev.filter((v) => !workerSet.has(v.workerId));
+        const restored = INITIAL_VERIFICATIONS.filter((v) => workerSet.has(v.workerId));
+        return [...restored, ...untouched];
+      });
+      setCases((prev) =>
+        prev.map((c) =>
+          caseSet.has(c.id) ? INITIAL_COMPLIANCE_CASES.find((ic) => ic.id === c.id) || c : c
+        )
+      );
+      setTasks((prev) => {
+        const untouched = prev.filter((t) => !caseSet.has(t.caseId));
+        const restored = INITIAL_REMEDIATION_TASKS.filter((t) => caseSet.has(t.caseId));
+        return [...restored, ...untouched];
+      });
+      setThreads((prev) => {
+        const untouched = prev.filter((th) => !caseSet.has(th.caseId));
+        const restored = INITIAL_COMMUNICATION_THREADS.filter((th) => caseSet.has(th.caseId));
+        return [...restored, ...untouched];
+      });
+      setHrmsMirror((prev) => {
+        const next = { ...prev };
+        for (const wId of workerIds) {
+          if (INITIAL_HRMS_MIRROR[wId]) next[wId] = INITIAL_HRMS_MIRROR[wId];
+        }
+        return next;
+      });
+    };
+
+    switch (scenarioId) {
+      case 'scenario_1_expired_pharmacist':
+        restoreEntitiesForWorkers(['EMP-10419'], ['CASE-9021', 'CASE-9022']);
+        launchDemoScenario('scenario_1_expired_pharmacist');
+        notify('Reset Scenario 1 (Daniel Kim) without altering other cases.', 'success');
+        break;
+      case 'scenario_2_newhire_nurse':
+        restoreEntitiesForWorkers(['EMP-10510'], ['CASE-9040', 'CASE-9041', 'CASE-9042']);
+        launchDemoScenario('scenario_2_newhire_nurse');
+        notify('Reset Scenario 2 (Elena Alvarez) without altering other cases.', 'success');
+        break;
+      case 'scenario_3_suspended_license':
+        restoreEntitiesForWorkers(['EMP-10901'], ['CASE-9030']);
+        launchDemoScenario('scenario_3_suspended_license');
+        notify('Reset Scenario 3 (Marcus Vance) without altering other cases.', 'success');
+        break;
+      case 'scenario_4_workday_retry':
+        restoreEntitiesForWorkers(['EMP-10922'], ['CASE-9062']);
+        setSyncTransactions((prev) => {
+          const others = prev.filter((t) => t.id !== 'TX-WD-9062' && t.caseId !== 'CASE-9062');
+          const origTx = INITIAL_SYNC_TRANSACTIONS.find((t) => t.id === 'TX-WD-9062');
+          return origTx ? [...others, origTx] : others;
+        });
+        launchDemoScenario('scenario_4_workday_retry');
+        notify('Reset Scenario 4 (Hannah Abbott Workday retry) without altering other cases.', 'success');
+        break;
+      case 'scenario_5_priya_policy_publish': {
+        const draftRule = INITIAL_RULES.find((r) => r.id === 'RULE-CA-PHARM-DRAFT');
+        setRules(INITIAL_RULES);
+        setPolicyVersions(INITIAL_POLICY_VERSIONS);
+        setTestRuns(
+          draftRule ? [runRuleEvaluation(draftRule, INITIAL_EVAL_FIXTURES, DEMO_REFERENCE_DATE)] : []
+        );
+        launchDemoScenario('scenario_5_priya_policy_publish');
+        notify('Reset Scenario 5 (Priya Rule Test Lab & Sign-Off) without altering operational cases.', 'success');
+        break;
+      }
+      case 'scenario_6_david_executive':
+        setRoiAssumptions(INITIAL_ROI_ASSUMPTIONS);
+        launchDemoScenario('scenario_6_david_executive');
+        notify('Reset Scenario 6 (David Executive ROI assumptions) to baseline.', 'success');
+        break;
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -2431,6 +2702,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsMobileSidebarOpen,
         activeScenarioId,
         launchDemoScenario,
+        resetScenario,
         toasts,
         notify,
         dismissToast,
@@ -2455,6 +2727,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         runDraftRuleTestLab,
         submitRuleForApproval,
         approveAndPublishRule,
+        rejectRuleVersion,
         rollbackRuleVersion,
         requirements,
         evidenceItems,
@@ -2496,7 +2769,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSelectedAgentId,
         selectedAgent,
         complianceAgentAutonomy,
-        setComplianceAgentAutonomy,
+        setComplianceAgentAutonomy: setBoundedComplianceAutonomy,
         killSwitchState,
         isKillSwitchModalOpen,
         setIsKillSwitchModalOpen,

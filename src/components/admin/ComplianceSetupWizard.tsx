@@ -23,6 +23,9 @@ export const ComplianceSetupWizard: React.FC = () => {
     activeRoleId,
     switchRole,
     can,
+    organization,
+    computedMetrics,
+    workers,
     policies,
     addPolicyDocument,
     rules,
@@ -33,7 +36,9 @@ export const ComplianceSetupWizard: React.FC = () => {
     runDraftRuleTestLab,
     submitRuleForApproval,
     approveAndPublishRule,
-    rollbackRuleVersion
+    rejectRuleVersion,
+    rollbackRuleVersion,
+    notify
   } = useApp();
 
   const activeTab: 'policy_library' | 'rule_builder' | 'rule_test_lab' | 'rule_versions' =
@@ -66,6 +71,14 @@ export const ComplianceSetupWizard: React.FC = () => {
   const isRunStale =
     latestRunForRule && selectedRule ? latestRunForRule.ruleSnapshotHash !== currentSnapshotHash : true;
 
+  const [policyFileError, setPolicyFileError] = useState<string | null>(null);
+
+  const workerById = useMemo(() => {
+    const m: Record<string, (typeof workers)[number]> = {};
+    for (const w of workers) m[w.id] = w;
+    return m;
+  }, [workers]);
+
   const impactedAssignments = useMemo(() => {
     if (!selectedRule) return [];
     return assignments.filter(
@@ -74,9 +87,22 @@ export const ComplianceSetupWizard: React.FC = () => {
   }, [selectedRule, assignments]);
 
   const handlePolicyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPolicyFileError(null);
     const file = e.target.files?.[0];
     if (!file) return;
-    const isTxt = file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt');
+    const lower = file.name.toLowerCase();
+    const isTxt = file.type === 'text/plain' || lower.endsWith('.txt');
+    const isPdf = file.type === 'application/pdf' || lower.endsWith('.pdf');
+    if (!isTxt && !isPdf) {
+      setPolicyFileError('Unsupported file format. Upload a .txt or .pdf policy document.');
+      notify('Unsupported policy file type. Allowed: .txt, .pdf', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPolicyFileError('File exceeds 5 MB browser demo limit.');
+      notify('Policy file exceeds 5 MB limit.', 'error');
+      return;
+    }
     const sizeLabel = `${Math.max(1, Math.round(file.size / 1024))} KB`;
     setUploadedPolicyFile({ name: file.name, size: sizeLabel, isTxt });
     if (!newPolicyName) setNewPolicyName(file.name.replace(/\.[^.]+$/, ''));
@@ -193,6 +219,21 @@ export const ComplianceSetupWizard: React.FC = () => {
         </div>
       </div>
 
+      {/* Step 1 Organization & Integration Scope Summary */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="text-slate-600">
+          <strong className="text-slate-900">{organization.name}</strong> · Active sample cohort:{' '}
+          <strong className="tabular-nums">{computedMetrics.sampleWorkersCount}</strong> workers ({organization.enterpriseHeadcountContext.toLocaleString()} enterprise context) · Ref Date{' '}
+          <span className="font-mono">{organization.demoReferenceDate}</span>
+        </div>
+        <button
+          onClick={() => setCurrentScreen('integrations')}
+          className="text-teal-700 hover:text-teal-800 font-semibold"
+        >
+          Manage Workday &amp; Repository Connectors →
+        </button>
+      </div>
+
       {/* TAB 1: POLICY LIBRARY */}
       {activeTab === 'policy_library' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 text-xs">
@@ -265,13 +306,16 @@ export const ComplianceSetupWizard: React.FC = () => {
             </div>
 
             <div>
-              <label className="font-medium text-slate-700 block mb-1">Attach .txt or .pdf</label>
+              <label className="font-medium text-slate-700 block mb-1">Attach .txt or .pdf (max 5 MB)</label>
               <input
                 type="file"
                 accept=".txt,.pdf"
                 onChange={handlePolicyFileChange}
                 className="w-full text-[11px] file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:bg-slate-900 file:text-white"
               />
+              {policyFileError && (
+                <div className="text-[11px] text-rose-700 font-medium mt-1">{policyFileError}</div>
+              )}
             </div>
 
             <div>
@@ -350,6 +394,30 @@ export const ComplianceSetupWizard: React.FC = () => {
                 <div className="text-slate-600">
                   Source Policy Citation: <strong>{selectedRule.sourceClause}</strong> ({selectedRule.sourcePolicyVersion})
                 </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                <div className="font-semibold text-slate-800">
+                  Matched Sample Worker Assignments ({impactedAssignments.length})
+                </div>
+                {impactedAssignments.length === 0 ? (
+                  <div className="text-slate-500">No sample assignments currently match this rule filter.</div>
+                ) : (
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {impactedAssignments.map((asn) => {
+                      const w = workerById[asn.workerId];
+                      return (
+                        <div key={asn.id} className="p-2 rounded bg-slate-50 border border-slate-200 flex items-center justify-between gap-2 text-[11px]">
+                          <div>
+                            <span className="font-semibold text-slate-900">{w?.name || asn.workerId}</span>
+                            <span className="text-slate-500"> · {asn.jobProfile}</span>
+                          </div>
+                          <span className="text-slate-600 font-mono shrink-0">{asn.state}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -664,6 +732,30 @@ export const ComplianceSetupWizard: React.FC = () => {
                 <span className="text-[11px] text-slate-500">Author: {selectedRule.author}</span>
               </div>
 
+              {/* Rule Parameter Diff & Latest Eval Summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                <div>
+                  <span className="text-slate-500 block">Out-of-State Rejection</span>
+                  <strong className={selectedRule.conditionExpression.disallowOutOfStateLicense ? 'text-emerald-800' : 'text-rose-700'}>
+                    {selectedRule.conditionExpression.disallowOutOfStateLicense ? 'Enabled (Rejects NV/Out-of-State)' : 'Disabled'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Primary Source Verification</span>
+                  <strong className="text-slate-900">
+                    {selectedRule.conditionExpression.requirePrimarySourceVerification ? 'Mandatory (PSV)' : 'Optional'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Latest Test Lab Run</span>
+                  <strong className={latestRunForRule?.gatePassed && !isRunStale ? 'text-emerald-800' : 'text-amber-800'}>
+                    {latestRunForRule
+                      ? `${latestRunForRule.passedCount}/${latestRunForRule.totalFixtures} Passed (${latestRunForRule.gatePassed && !isRunStale ? 'Gate Cleared' : 'Needs Rerun'})`
+                      : 'No run found'}
+                  </strong>
+                </div>
+              </div>
+
               {!canApproveRule.allowed ? (
                 <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2.5">
                   <div className="flex items-start gap-2 text-amber-950 font-medium">
@@ -686,15 +778,24 @@ export const ComplianceSetupWizard: React.FC = () => {
                     rows={2}
                     value={approvalNotes}
                     onChange={(e) => setApprovalNotes(e.target.value)}
+                    placeholder="Independent review & rationale..."
                     className="w-full px-3 py-1.5 rounded-lg border border-slate-200"
                   />
-                  <button
-                    onClick={() => approveAndPublishRule(selectedRule.id, approvalNotes)}
-                    className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Approve &amp; Publish Rule Version</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => approveAndPublishRule(selectedRule.id, approvalNotes)}
+                      className="px-4 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Approve &amp; Publish Rule Version</span>
+                    </button>
+                    <button
+                      onClick={() => rejectRuleVersion(selectedRule.id, approvalNotes)}
+                      className="px-4 py-2 rounded-lg border border-rose-300 text-rose-800 hover:bg-rose-50 font-semibold"
+                    >
+                      Return to Draft / Request Changes
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

@@ -1,31 +1,37 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { 
-  Cpu, 
-  Activity, 
-  CheckCircle2, 
-  UserX, 
-  Clock, 
-  DollarSign, 
-  ArrowUpRight, 
-  TrendingDown, 
-  ShieldCheck, 
-  ChevronRight, 
-  AlertTriangle,
-  FileCheck,
-  Zap,
+import {
+  Cpu,
+  Activity,
+  CheckCircle2,
+  UserX,
+  Clock,
+  DollarSign,
+  ArrowUpRight,
+  ShieldCheck,
+  ChevronRight,
   ArrowRight
 } from 'lucide-react';
 
 export const CommandCenter: React.FC = () => {
-  const { 
-    agents, 
-    setSelectedAgentId, 
-    setCurrentScreen, 
-    killSwitchState 
+  const {
+    agents,
+    setSelectedAgentId,
+    setCurrentScreen,
+    killSwitchState,
+    computedMetrics,
+    roiAssumptions,
+    testRuns,
+    auditEvents,
+    organization
   } = useApp();
 
   const isKilled = killSwitchState.isTriggered;
+  const activeHealthyAgentsCount = agents.filter(
+    (a) => !(a.id === 'compliance-agent' && isKilled) && a.status === 'Healthy'
+  ).length;
+  const monthlyCapacityValue = Math.round(computedMetrics.modeledAnnualCapacityValue / 12);
+  const latestRun = testRuns[0];
 
   const handleOpenAgent = (agentId: string) => {
     setSelectedAgentId(agentId);
@@ -37,14 +43,19 @@ export const CommandCenter: React.FC = () => {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <div className="text-[11px] font-bold text-teal-700 tracking-wider uppercase font-mono mb-1">
-            CONTROL LAYER · WORKFORCE GOVERNANCE
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-bold text-teal-700 tracking-wider uppercase font-mono">
+              CONTROL LAYER · WORKFORCE GOVERNANCE
+            </span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800">
+              Illustrative Modeled Telemetry (Synthetic Benchmark)
+            </span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             AI Operations Command Center
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Monitor agent adoption, trust, risk and measurable HR outcomes.
+            Monitor agent configuration, live session readiness metrics, and modeled HR ROI assumptions.
           </p>
         </div>
 
@@ -79,88 +90,93 @@ export const CommandCenter: React.FC = () => {
             <Cpu className="w-3.5 h-3.5 text-teal-600" />
           </div>
           <div className="text-2xl font-bold text-slate-900 font-mono">
-            {isKilled ? '3' : '4'}
+            {activeHealthyAgentsCount}
           </div>
           <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>{isKilled ? '3 Healthy · 1 Paused' : '4 Healthy · 0 Degraded'}</span>
+            <span className={`w-2 h-2 rounded-full ${isKilled ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+            <span>
+              {isKilled
+                ? `${activeHealthyAgentsCount} Healthy · ${agents.length - activeHealthyAgentsCount} Paused`
+                : `${agents.length} Healthy · 0 Degraded`}
+            </span>
           </div>
         </div>
 
-        {/* Agent Runs 30d */}
+        {/* Agent Runs 30d (Illustrative Model) */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Runs (30 Days)</span>
+            <span>Runs (30d Model)</span>
             <Activity className="w-3.5 h-3.5 text-teal-600" />
           </div>
           <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-            148,520
+            {agents.reduce((sum, a) => sum + a.runs30d, 0).toLocaleString()}
           </div>
           <div className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-0.5">
             <ArrowUpRight className="w-3 h-3" />
-            <span>+18% vs prev month</span>
+            <span>Simulated benchmark</span>
           </div>
         </div>
 
-        {/* Successful Runs */}
+        {/* Sample Readiness */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Successful Runs</span>
+            <span>Cohort Readiness</span>
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           </div>
           <div className="text-2xl font-bold text-emerald-700 font-mono tabular-nums">
-            96.8%
+            {computedMetrics.sampleReadinessPercent}%
           </div>
           <div className="text-[11px] text-slate-500 mt-1">
-            Deterministic rule check
+            {computedMetrics.readyWorkersCount} of {computedMetrics.sampleWorkersCount} sample workers
           </div>
         </div>
 
-        {/* Human Overrides */}
+        {/* Open Cases (Live) */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Human Overrides</span>
+            <span>Open Exceptions</span>
             <UserX className="w-3.5 h-3.5 text-amber-600" />
           </div>
           <div className="text-2xl font-bold text-amber-700 font-mono tabular-nums">
-            4.2%
+            {computedMetrics.openCasesCount}
           </div>
           <div className="text-[11px] text-slate-500 mt-1">
-            Healthy calibration signal
+            {computedMetrics.criticalCasesCount} Critical · {computedMetrics.resolvedCasesCount} Closed
           </div>
         </div>
 
-        {/* HR Hours Saved */}
+        {/* Modeled HR Hours Saved */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>HR Hours Saved</span>
+            <span>Modeled Hours/Mo</span>
             <Clock className="w-3.5 h-3.5 text-teal-600" />
           </div>
           <div className="text-2xl font-bold text-teal-800 font-mono tabular-nums">
-            1,284 <span className="text-xs font-normal text-slate-500">hrs</span>
+            {computedMetrics.modeledMonthlyHoursSaved.toLocaleString()}{' '}
+            <span className="text-xs font-normal text-slate-500">hrs</span>
           </div>
-          <div className="text-[11px] text-emerald-600 font-semibold mt-1">
-            +210 hrs MoM
+          <div className="text-[11px] text-slate-600 font-medium mt-1">
+            {roiAssumptions.monthlyExceptionVolume.toLocaleString()} cases/mo assumption
           </div>
         </div>
 
-        {/* HR Operational Value */}
+        {/* Modeled Monthly Capacity Value */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
           <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Monthly Value</span>
+            <span>Modeled Value/Mo</span>
             <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
           </div>
           <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
-            $64,200
+            ${monthlyCapacityValue.toLocaleString()}
           </div>
           <div className="text-[10px] text-slate-500 truncate mt-1">
-            @ $50/hr loaded cost
+            Capacity @ ${roiAssumptions.loadedHrHourlyRate}/hr
           </div>
         </div>
       </div>
 
-      <div className="text-[11px] text-slate-400 italic">
-        * Estimated using configured HR operational cost assumptions ($50/hour blended rate for HR Operations Specialists).
+      <div className="text-[11px] text-slate-500 italic">
+        * Capacity and run volume metrics combine live in-browser sample cohort calculations ({computedMetrics.sampleWorkersCount} sample workers across a {organization.enterpriseHeadcountContext.toLocaleString()}-employee enterprise model) with editable ROI assumptions.
       </div>
 
       {/* SECTION 4: ARE THE AGENTS CREATING VALUE? */}
@@ -172,14 +188,14 @@ export const CommandCenter: React.FC = () => {
               <span>Are the agents creating value?</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Continuously verified outcomes across 12,480 employee records against Workday master data.
+              Live tracking across {computedMetrics.sampleWorkersCount} sample workers and {computedMetrics.totalApplicableRequirements} evaluated requirements (modeled for {organization.enterpriseHeadcountContext.toLocaleString()} employees).
             </p>
           </div>
 
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500">North Star Audit-Ready:</span>
+            <span className="text-slate-500">Live Sample Readiness:</span>
             <span className="bg-teal-50 text-teal-800 border border-teal-200 font-mono font-bold px-2 py-0.5 rounded">
-              91% Files Compliant
+              {computedMetrics.sampleReadinessPercent}% Sample Workers Ready
             </span>
           </div>
         </div>
@@ -187,39 +203,56 @@ export const CommandCenter: React.FC = () => {
         {/* Before vs Now Comparison Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-500 uppercase">Average Resolution Time</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase">Handling Time / Case (Model)</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xs text-slate-400 line-through">8.4 days</span>
-              <span className="text-2xl font-extrabold text-teal-700 font-mono">3.1 days</span>
+              <span className="text-xs text-slate-400 line-through">
+                {roiAssumptions.baselineManualMinutesPerCase} min
+              </span>
+              <span className="text-2xl font-extrabold text-teal-700 font-mono">
+                {roiAssumptions.assistedMinutesPerCase} min
+              </span>
             </div>
-            <div className="text-[11px] text-emerald-600 font-medium">63% reduction in resolution cycle</div>
+            <div className="text-[11px] text-emerald-700 font-medium">
+              Editable in Business Value &amp; ROI
+            </div>
           </div>
 
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-500 uppercase">HR Touches Per Case</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase">Cash Realizable / Yr</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xs text-slate-400 line-through">6.2 touches</span>
-              <span className="text-2xl font-extrabold text-teal-700 font-mono">2.4 touches</span>
+              <span className="text-2xl font-extrabold text-teal-700 font-mono">
+                ${computedMetrics.modeledAnnualCashRealizable.toLocaleString()}
+              </span>
             </div>
-            <div className="text-[11px] text-emerald-600 font-medium">61% reduction in manual clicks</div>
+            <div className="text-[11px] text-slate-600 font-medium">
+              {Math.round(roiAssumptions.capacityToCashRealizationFactor * 100)}% realization factor
+            </div>
           </div>
 
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-500 uppercase">Audit Preparation Time</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase">Pending Clinical / PSV</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xs text-slate-400 line-through">5.0 days</span>
-              <span className="text-2xl font-extrabold text-teal-700 font-mono">7 hours</span>
+              <span className="text-2xl font-extrabold text-amber-700 font-mono">
+                {computedMetrics.clinicalEscalationsPending + computedMetrics.pendingPSVCount}
+              </span>
+              <span className="text-xs text-slate-500">live gates</span>
             </div>
-            <div className="text-[11px] text-emerald-600 font-medium">86% reduction in audit panic</div>
+            <div className="text-[11px] text-slate-600 font-medium">
+              {computedMetrics.clinicalEscalationsPending} clinical · {computedMetrics.pendingPSVCount} PSV checks
+            </div>
           </div>
 
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-500 uppercase">Automated File Processing</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase">Failed Workday Syncs</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-slate-900 font-mono">84,390</span>
-              <span className="text-xs text-slate-500">docs</span>
+              <span className="text-2xl font-extrabold text-slate-900 font-mono">
+                {computedMetrics.syncFailedCount}
+              </span>
+              <span className="text-xs text-slate-500">staging TXs</span>
             </div>
-            <div className="text-[11px] text-teal-700 font-medium">1,623 issues resolved via AI loop</div>
+            <div className="text-[11px] text-teal-700 font-medium">
+              {computedMetrics.resolvedCasesCount} case(s) closed this session
+            </div>
           </div>
         </div>
 
@@ -231,10 +264,10 @@ export const CommandCenter: React.FC = () => {
             </div>
             <div>
               <span className="font-bold text-slate-900 block">
-                Estimated Monthly Operational Productivity Value: $64,200
+                Modeled Monthly Capacity Value: ${monthlyCapacityValue.toLocaleString()} (Annual Net Cash: ${computedMetrics.modeledAnnualNetValue.toLocaleString()})
               </span>
               <span className="text-slate-600 text-[11px]">
-                1,284 HR Operations hours saved/month × $50 standard loaded cost per hour
+                {computedMetrics.modeledMonthlyHoursSaved.toLocaleString()} modeled HR hrs/mo × ${roiAssumptions.loadedHrHourlyRate}/hr loaded cost
               </span>
             </div>
           </div>
@@ -243,7 +276,7 @@ export const CommandCenter: React.FC = () => {
             onClick={() => setCurrentScreen('business_value')}
             className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition-colors shrink-0 flex items-center gap-1.5"
           >
-            <span>See ROI Model & Pilot Assumptions</span>
+            <span>See ROI Model &amp; Pilot Assumptions</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -253,13 +286,13 @@ export const CommandCenter: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-slate-900">Agent Workforce Usage</h2>
+            <h2 className="text-base font-bold text-slate-900">Agent Workforce Usage (Simulated Telemetry)</h2>
             <p className="text-xs text-slate-500">
-              The 4 specialized agents operating under Priya Sharma's governance rules.
+              The {agents.length} specialized agents governed by Priya Sharma&apos;s compliance policy controls.
             </p>
           </div>
           <span className="text-xs text-slate-500 font-mono">
-            Click any agent to inspect configuration & kill switch
+            Click any agent to inspect configuration &amp; kill switch
           </span>
         </div>
 
@@ -281,36 +314,36 @@ export const CommandCenter: React.FC = () => {
                     <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
                       {ag.version} · {ag.owner}
                     </span>
-                    <h3 className="text-sm font-bold text-slate-900 mt-0.5">
-                      {ag.name}
-                    </h3>
+                    <h3 className="text-sm font-bold text-slate-900 mt-0.5">{ag.name}</h3>
                   </div>
 
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
-                    isAgentStopped 
-                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                      isAgentStopped
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
                     {isAgentStopped ? 'PAUSED' : 'Healthy'}
                   </span>
                 </div>
 
-                <p className="text-slate-600 text-xs leading-relaxed line-clamp-2 h-8">
-                  {ag.purpose}
-                </p>
+                <p className="text-slate-600 text-xs leading-relaxed line-clamp-2 h-8">{ag.purpose}</p>
 
                 <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 space-y-1.5 text-xs font-mono">
                   <div className="flex justify-between">
-                    <span className="text-slate-500 font-sans">Total Runs (30d):</span>
+                    <span className="text-slate-500 font-sans">Runs (30d Model):</span>
                     <span className="font-bold text-slate-900">{ag.runs30d.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500 font-sans">Success Rate:</span>
+                    <span className="text-slate-500 font-sans">Fixture Rate:</span>
                     <span className="font-bold text-emerald-700">{ag.successRate}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-sans">Avg Latency / Cost:</span>
-                    <span className="text-slate-700">{ag.avgLatency} · {ag.avgCostPerRun}</span>
+                    <span className="text-slate-700">
+                      {ag.avgLatency} · {ag.avgCostPerRun}
+                    </span>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-slate-200">
                     <span className="text-slate-500 font-sans">{ag.keyMetricLabel}:</span>
@@ -320,7 +353,8 @@ export const CommandCenter: React.FC = () => {
 
                 <div className="flex items-center justify-between text-xs pt-1">
                   <span className="text-slate-500 text-[11px]">
-                    {ag.secondaryMetricLabel}: <strong className="text-slate-700">{ag.secondaryMetricValue}</strong>
+                    {ag.secondaryMetricLabel}:{' '}
+                    <strong className="text-slate-700">{ag.secondaryMetricValue}</strong>
                   </span>
                   <span className="text-teal-700 font-semibold text-xs flex items-center gap-0.5">
                     <span>Configure</span>
@@ -338,49 +372,67 @@ export const CommandCenter: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-teal-700" />
-            <h3 className="text-sm font-bold text-slate-900">Governance & Safety Health</h3>
+            <h3 className="text-sm font-bold text-slate-900">Live Session Governance &amp; Safety Health</h3>
           </div>
-          <span className="text-[11px] font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-            Audit Posture: DEFENSIVE
+          <span
+            className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
+              isKilled ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {isKilled ? 'Status: EMERGENCY PAUSED' : 'Status: BOUNDED DEMO ACTIVE'}
           </span>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Agents in Prod</span>
-            <span className="font-bold text-slate-900 text-sm font-mono">4</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Agents Active</span>
+            <span className="font-bold text-slate-900 text-sm font-mono">
+              {activeHealthyAgentsCount} / {agents.length}
+            </span>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Passing Evals</span>
-            <span className="font-bold text-emerald-700 text-sm font-mono">4 / 4</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Latest Test Lab</span>
+            <span
+              className={`font-bold text-sm font-mono ${
+                latestRun?.gatePassed ? 'text-emerald-700' : 'text-amber-700'
+              }`}
+            >
+              {latestRun ? `${latestRun.passedCount} / ${latestRun.totalFixtures}` : '0 / 0'}
+            </span>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Critical Failures</span>
-            <span className="font-bold text-slate-900 text-sm font-mono">0</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Critical Cases</span>
+            <span className="font-bold text-rose-700 text-sm font-mono">
+              {computedMetrics.criticalCasesCount}
+            </span>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Guardrails Blocked</span>
-            <span className="font-bold text-amber-700 text-sm font-mono">2 violations</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Failed Syncs</span>
+            <span className="font-bold text-amber-700 text-sm font-mono">
+              {computedMetrics.syncFailedCount}
+            </span>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">HR Approvals (Wk)</span>
-            <span className="font-bold text-teal-800 text-sm font-mono">182</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Cases Resolved</span>
+            <span className="font-bold text-teal-800 text-sm font-mono">
+              {computedMetrics.resolvedCasesCount}
+            </span>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
             <span className="text-[10px] text-slate-500 block uppercase font-mono">Emergency Stops</span>
             <span className={`font-bold text-sm font-mono ${isKilled ? 'text-rose-700' : 'text-slate-900'}`}>
-              {isKilled ? '1 Active' : '0 this month'}
+              {isKilled ? '1 Active' : '0 Active'}
             </span>
           </div>
 
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Compliance Status</span>
-            <span className="font-bold text-emerald-700 text-sm">Healthy</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Session Audit Events</span>
+            <span className="font-bold text-slate-900 text-sm font-mono">{auditEvents.length}</span>
           </div>
         </div>
       </div>

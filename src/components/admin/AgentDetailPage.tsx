@@ -22,10 +22,11 @@ import {
 import { AgentSandbox } from './AgentSandbox';
 
 export const AgentDetailPage: React.FC = () => {
-  const { 
-    selectedAgent, 
-    setCurrentScreen, 
-    complianceAgentAutonomy, 
+  const {
+    selectedAgent,
+    currentEnvironment,
+    setCurrentScreen,
+    complianceAgentAutonomy,
     setComplianceAgentAutonomy,
     dataSources,
     toggleDataSource,
@@ -33,12 +34,16 @@ export const AgentDetailPage: React.FC = () => {
     setIsKillSwitchModalOpen,
     resumeAgentFromKillSwitch,
     versions,
+    auditEvents,
+    can,
     setIsRollbackModalOpen
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'configuration' | 'autonomy' | 'data_access' | 'sandbox' | 'versions' | 'audit_log'>('overview');
 
   const isKilled = killSwitchState.isTriggered && selectedAgent.id === 'compliance-agent';
+  const canKillSwitch = can('TRIGGER_KILL_SWITCH');
+  const canAuthor = can('CREATE_DRAFT_RULE');
 
   const autonomyLevels = [
     { level: 0, title: 'LEVEL 0 — Observe Only', desc: 'Agent monitors and logs findings silently. No alerts, tasks or outreach.' },
@@ -107,11 +112,11 @@ export const AgentDetailPage: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-2 font-mono">
-                <span>Production since: <strong className="text-slate-700 font-semibold">{selectedAgent.productionSince}</strong></span>
+                <span>Baseline since: <strong className="text-slate-700 font-semibold">{selectedAgent.productionSince}</strong></span>
                 <span>·</span>
                 <span>Owner: <strong className="text-slate-700 font-semibold">{selectedAgent.owner}</strong></span>
                 <span>·</span>
-                <span>Environment: <strong className="text-teal-700 font-semibold">Production</strong></span>
+                <span>Environment: <strong className="text-teal-700 font-semibold">{currentEnvironment}</strong></span>
               </div>
             </div>
           </div>
@@ -135,17 +140,18 @@ export const AgentDetailPage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setCurrentScreen('evals')}
+              onClick={() => setCurrentScreen('rule_test_lab')}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>View Evals</span>
+              <span>Rule Test Lab</span>
             </button>
 
             {/* Red Emergency Kill Switch Button */}
             <button
+              disabled={!canKillSwitch.allowed}
               onClick={() => setIsKillSwitchModalOpen(true)}
-              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
               title="Emergency shutdown for this agent"
             >
               <AlertOctagon className="w-3.5 h-3.5 text-white" />
@@ -195,28 +201,28 @@ export const AgentDetailPage: React.FC = () => {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Active Production Policies</h3>
+              <h3 className="text-sm font-bold text-slate-900">BioVanguard Active Compliance Rules (Demo)</h3>
               <div className="divide-y divide-slate-100 text-xs">
                 <div className="py-2.5 flex justify-between items-center">
                   <div>
-                    <span className="font-semibold text-slate-800">Employment Verification Policy</span>
-                    <span className="text-slate-500 text-[11px] block">Governs Form I-9 Section 2 statutory requirements</span>
+                    <span className="font-semibold text-slate-800">Clinical Pharmacy &amp; Research Licensure Standard</span>
+                    <span className="text-slate-500 text-[11px] block">California Board of Pharmacy PSV &amp; expiration rules</span>
                   </div>
-                  <span className="font-mono text-teal-700 font-bold">Version 4.2 · Active</span>
+                  <span className="font-mono text-teal-700 font-bold">v3.8 · Active</span>
                 </div>
                 <div className="py-2.5 flex justify-between items-center">
                   <div>
-                    <span className="font-semibold text-slate-800">Clinical & Professional Licensure Policy</span>
-                    <span className="text-slate-500 text-[11px] block">California DCA, Texas Board of Pharmacy, Legal Bar rules</span>
+                    <span className="font-semibold text-slate-800">Federal Form I-9 &amp; Texas Nursing Licensure</span>
+                    <span className="text-slate-500 text-[11px] block">List A vs List B+C acceptability &amp; Texas BON PSV</span>
                   </div>
-                  <span className="font-mono text-teal-700 font-bold">Version 3.8 · Active</span>
+                  <span className="font-mono text-teal-700 font-bold">v3.8 · Active</span>
                 </div>
                 <div className="py-2.5 flex justify-between items-center">
                   <div>
-                    <span className="font-semibold text-slate-800">Pre-Employment Screening Standards</span>
-                    <span className="text-slate-500 text-[11px] block">Sterling background and education verification</span>
+                    <span className="font-semibold text-slate-800">Occupational Health Clearance Boundary</span>
+                    <span className="text-slate-500 text-[11px] block">Clearance status summary only; raw medical PHI excluded</span>
                   </div>
-                  <span className="font-mono text-teal-700 font-bold">Version 2.0 · Active</span>
+                  <span className="font-mono text-slate-700 font-bold">PHI Excluded</span>
                 </div>
               </div>
             </div>
@@ -224,31 +230,31 @@ export const AgentDetailPage: React.FC = () => {
 
           <div className="space-y-6">
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Production Metrics (30d)</h3>
+              <h3 className="text-sm font-bold text-slate-900">Illustrative Telemetry (Demo Benchmark)</h3>
               <div className="space-y-2 text-xs font-mono">
                 <div className="flex justify-between py-1 border-b border-slate-100">
-                  <span className="text-slate-500 font-sans">Total Invocations:</span>
-                  <span className="font-bold text-slate-900">41,260</span>
+                  <span className="text-slate-500 font-sans">Sample Runs (Demo):</span>
+                  <span className="font-bold text-slate-900">{selectedAgent.runs30d.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-100">
-                  <span className="text-slate-500 font-sans">Success Rate:</span>
-                  <span className="font-bold text-emerald-700">96.9%</span>
+                  <span className="text-slate-500 font-sans">Fixture Success Rate:</span>
+                  <span className="font-bold text-emerald-700">{selectedAgent.successRate}%</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-100">
                   <span className="text-slate-500 font-sans">Avg Latency:</span>
-                  <span className="text-slate-700">2.6 sec</span>
+                  <span className="text-slate-700">{selectedAgent.avgLatency}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-100">
-                  <span className="text-slate-500 font-sans">Compliance Findings:</span>
-                  <span className="font-bold text-slate-900">2,146</span>
+                  <span className="text-slate-500 font-sans">{selectedAgent.keyMetricLabel}:</span>
+                  <span className="font-bold text-slate-900">{selectedAgent.keyMetricValue}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-100">
-                  <span className="text-slate-500 font-sans">False Positive Rate:</span>
-                  <span className="font-bold text-slate-700">3.1%</span>
+                  <span className="text-slate-500 font-sans">{selectedAgent.secondaryMetricLabel}:</span>
+                  <span className="font-bold text-slate-700">{selectedAgent.secondaryMetricValue}</span>
                 </div>
                 <div className="flex justify-between py-1">
-                  <span className="text-slate-500 font-sans">Avg Cost / Run:</span>
-                  <span className="text-slate-700">$0.014</span>
+                  <span className="text-slate-500 font-sans">Est. Cost / Run:</span>
+                  <span className="text-slate-700">{selectedAgent.avgCostPerRun}</span>
                 </div>
               </div>
             </div>
@@ -346,25 +352,37 @@ export const AgentDetailPage: React.FC = () => {
           <div className="space-y-3">
             {autonomyLevels.map((lvl) => {
               const isSelected = complianceAgentAutonomy === lvl.level;
+              const isBlockedLevel = lvl.level >= 3;
               return (
                 <div
                   key={lvl.level}
-                  onClick={() => setComplianceAgentAutonomy(lvl.level as any)}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                    isSelected 
-                      ? 'border-teal-500 bg-teal-50/60 shadow-xs ring-1 ring-teal-500' 
-                      : 'border-slate-200 hover:border-slate-300 bg-slate-50'
+                  onClick={() => {
+                    if (!isBlockedLevel && canAuthor.allowed) {
+                      setComplianceAgentAutonomy(lvl.level as any);
+                    }
+                  }}
+                  className={`p-4 rounded-xl border transition-all ${
+                    isBlockedLevel
+                      ? 'border-rose-200 bg-rose-50/40 opacity-75 cursor-not-allowed'
+                      : isSelected
+                      ? 'border-teal-500 bg-teal-50/60 shadow-xs ring-1 ring-teal-500 cursor-pointer'
+                      : 'border-slate-200 hover:border-slate-300 bg-slate-50 cursor-pointer'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className={`text-xs font-bold ${isSelected ? 'text-teal-900' : 'text-slate-800'}`}>
                       {lvl.title}
                     </span>
-                    {isSelected && (
+                    {isBlockedLevel ? (
+                      <span className="text-[10px] font-mono font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        <span>Locked by Clinical Safety Policy</span>
+                      </span>
+                    ) : isSelected ? (
                       <span className="text-[10px] font-mono font-bold bg-teal-600 text-white px-2 py-0.5 rounded">
                         Active Setting
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <p className="text-xs text-slate-600">
                     {lvl.desc}
@@ -415,18 +433,24 @@ export const AgentDetailPage: React.FC = () => {
               { key: 'externalWeb', label: 'External Internet Web', desc: 'Prohibited in enterprise production' }
             ].map((ds) => {
               const isEnabled = dataSources[ds.key as keyof typeof dataSources];
+              const isProhibited = ds.key === 'externalWeb';
               return (
                 <div key={ds.key} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between space-y-3">
                   <div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-900">{ds.label}</span>
                       <button
+                        disabled={isProhibited || !canAuthor.allowed}
                         onClick={() => toggleDataSource(ds.key as any)}
                         className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono transition-colors ${
-                          isEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                          isProhibited
+                            ? 'bg-rose-100 text-rose-800 cursor-not-allowed'
+                            : isEnabled
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-200 text-slate-600'
                         }`}
                       >
-                        {isEnabled ? 'Enabled' : 'Disabled'}
+                        {isProhibited ? 'Locked Off' : isEnabled ? 'Enabled' : 'Disabled'}
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-1">{ds.desc}</p>
@@ -465,11 +489,12 @@ export const AgentDetailPage: React.FC = () => {
             </div>
 
             <button
+              disabled={!canAuthor.allowed}
               onClick={() => setIsRollbackModalOpen(true)}
-              className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-bold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 hover:bg-amber-100 disabled:opacity-40 text-xs font-bold flex items-center gap-1.5"
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-              <span>Rollback to v2.3</span>
+              <span>Rollback Rule Snapshot (v3.7)</span>
             </button>
           </div>
 
@@ -486,7 +511,7 @@ export const AgentDetailPage: React.FC = () => {
                     }`}>
                       {ver.status}
                     </span>
-                    <span className="text-slate-500 font-mono text-[11px]">Model: {ver.model}</span>
+                    <span className="text-slate-500 font-mono text-[11px]">Engine: {ver.model}</span>
                   </div>
 
                   <p className="text-slate-600 text-xs">{ver.notes}</p>
@@ -503,18 +528,19 @@ export const AgentDetailPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   {ver.status === 'Previous' && (
                     <button
+                      disabled={!canAuthor.allowed}
                       onClick={() => setIsRollbackModalOpen(true)}
-                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs"
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white font-bold rounded-lg text-xs"
                     >
                       Rollback
                     </button>
                   )}
                   {ver.status === 'Draft' && (
                     <button
-                      onClick={() => setCurrentScreen('evals')}
+                      onClick={() => setCurrentScreen('rule_test_lab')}
                       className="px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs"
                     >
-                      Promote to Evals
+                      Open Test Lab
                     </button>
                   )}
                 </div>
@@ -527,21 +553,25 @@ export const AgentDetailPage: React.FC = () => {
       {/* TAB CONTENT: Audit Log */}
       {activeTab === 'audit_log' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4 text-xs">
-          <h3 className="text-base font-bold text-slate-900">Agent Configuration Audit Log</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-900">Demonstration Event History (Browser-Local)</h3>
+            <button
+              onClick={() => setCurrentScreen('audit_logs')}
+              className="text-teal-700 hover:text-teal-800 font-semibold"
+            >
+              Open Full Audit Log →
+            </button>
+          </div>
           <div className="space-y-2 font-mono">
-            {[
-              { time: 'Today 10:54 AM', actor: 'Priya Sharma', action: 'KILL_SWITCH_STATUS_CHECK', detail: 'Verified emergency shutdown threshold rules' },
-              { time: 'Oct 08, 2026', actor: 'Priya Sharma', action: 'POLICY_SCHEMA_UPDATE', detail: 'Associated Employment Verification Policy v4.2 with Compliance Agent v2.4' },
-              { time: 'Oct 01, 2026', actor: 'HR AI Platform Team', action: 'AGENT_PROMOTED_PRODUCTION', detail: 'Compliance Agent v2.4 published after passing 100% Safety and 98.2% Regression Evals' }
-            ].map((log, idx) => (
-              <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+            {auditEvents.slice(0, 8).map((ev) => (
+              <div key={ev.eventId} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <span className="text-slate-500 mr-3">{log.time}</span>
-                  <span className="font-bold text-teal-800 mr-2">{log.actor}</span>
-                  <span className="text-slate-700">{log.detail}</span>
+                  <span className="text-slate-500 mr-3">{ev.timestamp}</span>
+                  <span className="font-bold text-teal-800 mr-2">{ev.actor}</span>
+                  <span className="text-slate-700 font-sans">{ev.details}</span>
                 </div>
-                <span className="text-[10px] text-slate-500 font-bold bg-slate-200 px-1.5 py-0.5 rounded">
-                  {log.action}
+                <span className="text-[10px] text-slate-600 font-bold bg-slate-200 px-1.5 py-0.5 rounded">
+                  {ev.action}
                 </span>
               </div>
             ))}
