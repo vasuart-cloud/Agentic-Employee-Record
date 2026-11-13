@@ -12,12 +12,17 @@ const steps = [
 ] as const;
 
 export const AdminOnboardingJourney: React.FC = () => {
-  const { organization, facilities, policies, rules, testRuns, updateDraftRule,
+  const { organization, facilities, policies, rules, testRuns, updateOrganization, addPolicyDocument, updateDraftRule,
     runDraftRuleTestLab, submitRuleForApproval, approveAndPublishRule, can,
     setCurrentScreen, activeRoleId, switchRole, notify, computedMetrics } = useApp();
   const [step, setStep] = useState(0);
   const [ruleId, setRuleId] = useState('RULE-CA-PHARM-DRAFT');
   const [reviewedPolicy, setReviewedPolicy] = useState(false);
+  const [organizationName, setOrganizationName] = useState(organization.name);
+  const [policyTitle, setPolicyTitle] = useState('');
+  const [policyClause, setPolicyClause] = useState('');
+  const [policyOwner, setPolicyOwner] = useState('Healthcare Compliance');
+  const [selectedPolicyId, setSelectedPolicyId] = useState('POL-CLIN-38');
   const [approvalNotes, setApprovalNotes] = useState('Independent review of applicability, PSV requirements and sandbox results.');
   const draftRule = rules.find(r => r.id === ruleId) || rules.find(r => r.id === 'RULE-CA-PHARM-DRAFT') || rules[0];
   const test = testRuns.find(t => t.ruleId === draftRule.id);
@@ -65,7 +70,10 @@ export const AdminOnboardingJourney: React.FC = () => {
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="rounded-xl bg-slate-50 p-4 border border-slate-200">
               <div className="text-xs text-slate-500">Organization</div>
-              <div className="font-semibold text-lg mt-1">{organization.name}</div>
+              <label className="text-xs font-semibold text-slate-700 block mt-3">Organization name (demo)
+                <input value={organizationName} onChange={e => setOrganizationName(e.target.value)} className="w-full block mt-1 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm" />
+              </label>
+              <button type="button" onClick={()=>{if(organizationName.trim()) updateOrganization({name:organizationName.trim()});}} className="mt-2 text-xs font-semibold text-teal-700 hover:underline">Save organization name</button>
               <div className="text-sm text-slate-600 mt-2">Sample: {computedMetrics.sampleWorkersCount} workers. Enterprise headcount is contextual only, not a measured compliance denominator.</div>
               <div className="mt-3 text-xs font-semibold text-teal-800">Workday HCM · Simulated connector</div>
             </div>
@@ -90,6 +98,33 @@ export const AdminOnboardingJourney: React.FC = () => {
                 </div>
               ))}
             </div>
+            <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Add a policy source (demo)</div>
+              <p className="text-xs text-slate-600">Paste a sample policy clause. It is stored in this browser demo and is not automatically interpreted as a regulation.</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="text-xs font-medium text-slate-700">Policy title
+                  <input value={policyTitle} onChange={e=>setPolicyTitle(e.target.value)} placeholder="e.g. Clinical License Renewal Policy" className="block w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Policy owner
+                  <input value={policyOwner} onChange={e=>setPolicyOwner(e.target.value)} className="block w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </label>
+              </div>
+              <label className="text-xs font-medium text-slate-700 block">Policy requirement / clause
+                <textarea value={policyClause} onChange={e=>setPolicyClause(e.target.value)} rows={2} placeholder="Employees in clinical roles must maintain current credentials, verified by designated credentialing staff." className="block w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"/>
+              </label>
+              <button disabled={!policyTitle.trim() || !policyClause.trim()} onClick={()=>{
+                const id='POL-DEMO-'+Date.now().toString().slice(-7);
+                addPolicyDocument({
+                  id,name:policyTitle.trim(),documentNumber:id,version:'v1.0-draft',effectiveDate:organization.demoReferenceDate,
+                  owner:policyOwner.trim()||'Healthcare Compliance',applicableBusinessUnit:organization.name,
+                  category:'Clinical Licensure',sourceReference:'Manual Demo Entry',summary:'Admin-authored demonstration source',
+                  clauses:[{clauseId:id+'-1',section:'Section 1',text:policyClause.trim()}],
+                  fileName:'manual-policy-demo.txt',fileSize:'N/A',extractionStatus:'Demo File Reference (Manual Clause Entry Required)',
+                  status:'Draft',disclaimer:'Illustrative employer policy draft. Requires review before operational use.'
+                });
+                setSelectedPolicyId(id);setReviewedPolicy(true);setPolicyTitle('');setPolicyClause('');
+              }} className="bg-teal-700 text-white font-semibold text-xs rounded-lg px-4 py-2 disabled:opacity-40">Save policy draft</button>
+            </div>
             <label className="flex gap-2 items-center text-sm text-slate-800 bg-teal-50 p-3 rounded-lg border border-teal-100">
               <input type="checkbox" checked={reviewedPolicy} onChange={e => setReviewedPolicy(e.target.checked)}/>
               I have reviewed the sample policy sources for this demo.
@@ -104,6 +139,18 @@ export const AdminOnboardingJourney: React.FC = () => {
               <select value={draftRule.id} onChange={e => setRuleId(e.target.value)}
                 className="block mt-1 p-2.5 w-full border border-slate-300 rounded-lg text-sm bg-white">
                 {rules.filter(r => r.status === 'Draft' || r.status === 'Pending Approval').map(r => <option key={r.id} value={r.id}>{r.name} ({r.version})</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-semibold block">Policy source for this draft
+              <select value={policies.some(p=>p.id===draftRule.sourcePolicyId)?draftRule.sourcePolicyId:selectedPolicyId}
+                disabled={!canEdit}
+                onChange={e=>{
+                  setSelectedPolicyId(e.target.value);
+                  const selected=policies.find(p=>p.id===e.target.value);
+                  if(selected) updateDraftRule({...draftRule,status:'Draft',sourcePolicyId:selected.id,sourcePolicyVersion:selected.version,sourceClause:selected.clauses[0]?.section||'Section 1'});
+                }}
+                className="block w-full mt-1 p-2.5 border border-slate-300 rounded-lg text-sm bg-white">
+                {policies.map(p=><option value={p.id} key={p.id}>{p.name} · {p.version}</option>)}
               </select>
             </label>
             <div className="grid sm:grid-cols-2 gap-3">
