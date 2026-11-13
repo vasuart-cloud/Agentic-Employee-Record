@@ -4,6 +4,9 @@ import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { PersonaSwitcherModal } from './components/common/PersonaSwitcherModal';
 import { DemoGuideModal } from './components/common/DemoGuideModal';
+import { SimpleDemoHome } from './components/common/SimpleDemoHome';
+import { GuidedStoryBar } from './components/common/GuidedStoryBar';
+import { AdminOnboardingJourney } from './components/admin/AdminOnboardingJourney';
 import { ToastContainer } from './components/common/ToastContainer';
 
 // Operational & Credentialing Views
@@ -78,6 +81,10 @@ const MainContent: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
       <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 max-w-7xl w-full mx-auto">
+        <GuidedStoryBar />
+        {currentScreen === 'demo_home' && <SimpleDemoHome />}
+        {currentScreen === 'admin_onboarding' &&
+          (isPriya || isAlex ? <AdminOnboardingJourney /> : <RoleRestrictedView requiredRole="Priya Sharma (Healthcare Compliance Admin)" targetRoleKey="admin_priya" />)}
         {/* Maya / Operations & Shared Dossier Routes */}
         {currentScreen === 'weekly_overview' && <WeeklyOperationsDashboard />}
         {(currentScreen === 'employees' || currentScreen === 'employee_records') && <EmployeeDossier />}
